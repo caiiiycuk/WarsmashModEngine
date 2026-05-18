@@ -114,6 +114,9 @@ import net.warsmash.uberserver.ServerErrorMessageType;
 public class MenuUI {
 	private static final Vector2 screenCoordsVector = new Vector2();
 	private static boolean ENABLE_NOT_YET_IMPLEMENTED_BUTTONS = false;
+	private static final boolean ENABLE_CAMPAIGN_BUTTON = false;
+	private static final boolean ENABLE_BATTLE_NET_BUTTON = false;
+	private static final boolean ENABLE_LOCAL_GAME_BUTTON = false;
 
 	private final DataSource dataSource;
 	private final Scene uiScene;
@@ -892,7 +895,7 @@ public class MenuUI {
 			});
 		}
 
-		this.localAreaNetworkButton.setEnabled(true);
+		this.localAreaNetworkButton.setEnabled(ENABLE_LOCAL_GAME_BUTTON);
 		this.optionsButton.setEnabled(false);
 		this.creditsButton.setEnabled(false);
 
@@ -1832,7 +1835,7 @@ public class MenuUI {
 
 	protected void setSinglePlayerButtonsEnabled(final boolean b) {
 		this.profileButton.setEnabled(b);
-		this.campaignButton.setEnabled(b);
+		this.campaignButton.setEnabled(b && ENABLE_CAMPAIGN_BUTTON);
 		this.loadSavedButton.setEnabled(b && ENABLE_NOT_YET_IMPLEMENTED_BUTTONS);
 		this.viewReplayButton.setEnabled(b && ENABLE_NOT_YET_IMPLEMENTED_BUTTONS);
 		if (this.customCampaignButton != null) {
@@ -1844,9 +1847,9 @@ public class MenuUI {
 
 	private void setMainMenuButtonsEnabled(final boolean b) {
 		this.singlePlayerButton.setEnabled(b);
-		this.battleNetButton.setEnabled(b);
+		this.battleNetButton.setEnabled(b && ENABLE_BATTLE_NET_BUTTON);
 		this.realmButton.setEnabled(b);
-		this.localAreaNetworkButton.setEnabled(b && ENABLE_NOT_YET_IMPLEMENTED_BUTTONS);
+		this.localAreaNetworkButton.setEnabled(b && ENABLE_LOCAL_GAME_BUTTON);
 		this.optionsButton.setEnabled(b && ENABLE_NOT_YET_IMPLEMENTED_BUTTONS);
 		this.creditsButton.setEnabled(b && ENABLE_NOT_YET_IMPLEMENTED_BUTTONS);
 		this.exitButton.setEnabled(b);
