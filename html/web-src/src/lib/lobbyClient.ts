@@ -23,9 +23,8 @@
 import {
   pokiBridgeBroadcastBytes, pokiBridgeBroadcastString, pokiBridgeClose,
   pokiBridgeCreateLobby, pokiBridgeInit, pokiBridgeJoinLobby,
-  pokiBridgeLeaveLobby, pokiBridgeListLobbies, pokiBridgeSendBytesTo,
-  pokiBridgeSendStringTo, pokiBridgeSetLobbySettings,
-  type PublicLobbyEntry,
+  pokiBridgeLeaveLobby, pokiBridgeSendBytesTo,
+  pokiBridgeSendStringTo,
 } from './poki-bridge';
 import { extractMapPlayerCount } from './mapMeta';
 import {
@@ -35,10 +34,7 @@ import {
 import { getMapInfoForFullPath } from './mapInfoCache';
 import { getPlayerName } from './playerName';
 import { DEFAULT_HANDICAP, defaultColorForSlot } from './playerColors';
-import { readIndex } from './assetStaging';
-import {
-  checkVersionCompat, readCachedGameVersion, type GameEdition,
-} from './gameVersion';
+import type { GameEdition } from './gameVersion';
 
 /**
  * Compact host-version descriptor published in lobby customData. We
@@ -55,13 +51,6 @@ export interface HostVersionInfo {
    *  Warcraft III.exe staged). */
   build: string | null;
 }
-
-/**
- * Last hostVersion we published. Held at module scope so subsequent
- * setLobbySettings calls (map change, etc.) re-include it instead of
- * accidentally dropping it back to undefined. Reset on leaveLobby.
- */
-let currentHostVersion: HostVersionInfo | null = null;
 
 // Stable UUID — must match WarsmashWebGameId.UUID on the Java side
 // so the JS-driven lobby and the engine's understanding of "which
@@ -248,6 +237,11 @@ export function getLobbyState(): LobbyState {
 
 export function subscribeLobbyState(fn: Listener): () => void {
   subscribers.add(fn);
+  // Subscribers are commonly installed from a component effect, so
+  // state may already have advanced between the component's initial
+  // render and the effect running. Deliver the current snapshot
+  // immediately instead of making the UI wait for the next mutation.
+  fn(state);
   return () => subscribers.delete(fn);
 }
 
@@ -327,11 +321,6 @@ function ensureBridgeInit(): void {
 
   const ok = pokiBridgeInit(WARSMASH_GAME_ID, {
     ready: (selfId) => {
-      // Diagnostic: if the server is using session cookies, this id
-      // will be the SAME across page reloads in the same browser
-      // (Poki's signaling cookie is scoped to netlib.poki.io and the
-      // browser auto-sends it with every WebSocket handshake to that
-      // domain). Reload twice and compare to confirm.
       console.log('[lobbyClient] ready as peer', selfId);
       setState({ ready: true, selfId, lastError: '' });
       postToWorker({ kind: 'mp-ready', selfId });
@@ -347,6 +336,7 @@ function ensureBridgeInit(): void {
       postToWorker({ kind: 'mp-ready', selfId });
     },
     lobby: (code, leaderId) => {
+      console.log('[lobbyClient] lobby callback', { code, leaderId, selfId: state.selfId });
       // The 'joined' packet carries the lobby leader inline, so we
       // know up front whether WE created (we're the leader) or
       // joined someone else's lobby. Setting leaderId/isHost here
@@ -357,18 +347,23 @@ function ensureBridgeInit(): void {
         peerId: state.selfId,
         name: getPlayerName() || 'Anonymous',
       };
-      // Host: seed self into slot 0 of the current slot table (which
-      // createLobby already shaped from mapInfo). Joiners: don't
-      // touch slots — the host's 'lobby-state' broadcast will
-      // replace them shortly.
+      const knownPlayers = state.players.filter(p => p.peerId !== state.selfId);
+      const players = [selfPlayer, ...knownPlayers];
+      // Host: createLobby already placed us into the first joinable
+      // map slot. Preserve that seat here instead of blindly forcing
+      // slot 0: many custom maps reserve low slots for Computer /
+      // fixed-force players, and reseating into 0 makes the engine
+      // start us as the wrong player. If a future bridge path reaches
+      // this callback without pre-seating us, fall back to the first
+      // joinable slot rather than a hard-coded index.
       const seededSlots = isCreator
-        ? slotsWithOccupant(state.slots, 0, state.selfId)
+        ? ensurePeerHasJoinableSlot(state.slots, state.selfId, state.mapInfo)
         : state.slots;
       setState({
         lobbyCode: code,
         leaderId,
         isHost: isCreator,
-        players: [selfPlayer],
+        players,
         slots: seededSlots,
         lastError: '',
       });
@@ -454,8 +449,8 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Best-effort cleanup so we don't leave orphan lobbies on Poki's
- * signaling server when the user closes the tab or hard-reloads.
+ * Best-effort cleanup so we don't leave orphan room aliases when the
+ * user closes the tab or hard-reloads.
  * pokiBridgeClose() is synchronous (calls net.close which fires the
  * WebSocket close frame inline), so it actually completes during
  * beforeunload — unlike net.leave() which is async and gets cut off.
@@ -470,7 +465,10 @@ if (typeof window !== 'undefined') {
  */
 function installCleanupHandlers(): void {
   const cleanup = () => {
-    try { pokiBridgeClose(); }
+    try {
+      announceLeaving();
+      pokiBridgeClose();
+    }
     catch { /* ignore — page is dying anyway */ }
   };
   window.addEventListener('pagehide', cleanup);
@@ -486,7 +484,9 @@ function installCleanupHandlers(): void {
 // lockstep traffic uses the unreliable channel and is forwarded to
 // the worker untouched.
 
+interface HelloMsg       { type: 'hello'; }
 interface IntroduceMsg   { type: 'introduce'; name: string; }
+interface LeavingMsg     { type: 'leaving'; }
 interface LobbyStateMsg  { type: 'lobby-state'; mapPath: string; maxPlayers: number; slots: LobbySlot[]; }
 interface ClaimSlotMsg   { type: 'claim-slot'; slotIndex: number; }
 /** Snapshot of every slot's config the host ships to joiners as part
@@ -526,7 +526,7 @@ interface StartGameMsg   {
    *  engine so race/color/team/handicap match the host's lobby UI. */
   slotConfigs: SlotConfigEntry[];
 }
-type ControlMsg = IntroduceMsg | LobbyStateMsg | ClaimSlotMsg | UpdateSlotMsg | KickedMsg | StartGameMsg;
+type ControlMsg = HelloMsg | IntroduceMsg | LeavingMsg | LobbyStateMsg | ClaimSlotMsg | UpdateSlotMsg | KickedMsg | StartGameMsg;
 
 /** Fields a slot occupant or host may change on a slot. `slotType`
  *  is host-only — non-host callers passing it are silently rejected. */
@@ -548,6 +548,24 @@ function announceSelfTo(peerId: string): void {
   const name = getPlayerName() || 'Anonymous';
   const msg: IntroduceMsg = { type: 'introduce', name };
   pokiBridgeSendStringTo(peerId, 'reliable', JSON.stringify(msg));
+}
+
+/**
+ * Best-effort explicit room departure. A hard reload creates a fresh
+ * peer id, while the underlying transport may take a while to report
+ * the old peer as disconnected. Tell the host synchronously before
+ * page teardown so it can free our slot immediately instead of
+ * waiting for low-level liveness detection.
+ */
+function announceLeaving(): void {
+  if (!state.lobbyCode) return;
+  const msg: LeavingMsg = { type: 'leaving' };
+  const payload = JSON.stringify(msg);
+  if (state.isHost) {
+    pokiBridgeBroadcastString('reliable', payload);
+  } else if (state.leaderId) {
+    pokiBridgeSendStringTo(state.leaderId, 'reliable', payload);
+  }
 }
 
 /** Host: broadcast the current lobby snapshot (map + slots) to all
@@ -584,9 +602,27 @@ function handleControlMessage(peerId: string, payload: string): void {
     return;
   }
   switch (msg.type) {
+    case 'hello': {
+      if (!state.isHost) return;
+      sendLobbyStateTo(peerId);
+      announceSelfTo(peerId);
+      break;
+    }
     case 'introduce': {
       const next = state.players.map(p => p.peerId === peerId ? { ...p, name: msg.name } : p);
       setState({ players: next });
+      break;
+    }
+    case 'leaving': {
+      // Host-side fast path for hard reload / explicit leave. The
+      // eventual low-level disconnect event is still handled too,
+      // but this keeps stale peer ids from occupying slots while the
+      // transport notices the dead connection.
+      if (!state.isHost) return;
+      const nextPlayers = state.players.filter(p => p.peerId !== peerId);
+      const nextSlots = slotsWithoutOccupant(state.slots, peerId);
+      setState({ players: nextPlayers, slots: nextSlots });
+      broadcastLobbyState();
       break;
     }
     case 'lobby-state': {
@@ -622,6 +658,7 @@ function handleControlMessage(peerId: string, payload: string): void {
             console.warn('[lobbyClient] joiner mapInfo load failed for', incomingMapPath, e);
           });
       }
+      (globalThis as any).pokiBridgeLobbyStateReceived?.();
       break;
     }
     case 'claim-slot': {
@@ -630,14 +667,15 @@ function handleControlMessage(peerId: string, payload: string): void {
       // otherwise.
       if (!state.isHost) return;
       const target = msg.slotIndex;
-      if (target < 0 || target >= state.maxPlayers) return;
       const slots = state.slots;
-      const targetSlot = slots[target];
+      const targetPos = slots.findIndex(s => s.index === target);
+      if (targetPos < 0) return;
+      const targetSlot = slots[targetPos];
       if (!targetSlot || targetSlot.occupant !== null) return;
       if (!isSlotJoinable(targetSlot, state.mapInfo)) return;
       // Move peer from wherever they are now into the target slot.
       const moved = slotsWithoutOccupant(slots, peerId);
-      moved[target] = { ...moved[target], occupant: peerId };
+      moved[targetPos] = { ...moved[targetPos], occupant: peerId };
       setState({ slots: moved });
       broadcastLobbyState();
       break;
@@ -665,6 +703,7 @@ function handleControlMessage(peerId: string, payload: string): void {
       break;
     }
     case 'start-as-joiner': {
+      console.log('[lobbyClient] received start-as-joiner from host', peerId);
       pendingStartFromHost = msg;
       for (const fn of startListeners) try { fn(msg); } catch (e) { console.error(e); }
       break;
@@ -674,6 +713,8 @@ function handleControlMessage(peerId: string, payload: string): void {
 
 let pendingStartFromHost: StartGameMsg | null = null;
 const startListeners = new Set<(m: StartGameMsg) => void>();
+let pendingHostStart: ReturnType<typeof startGame> = null;
+const hostStartListeners = new Set<(m: NonNullable<ReturnType<typeof startGame>>) => void>();
 
 export function getPendingStartFromHost(): StartGameMsg | null {
   return pendingStartFromHost;
@@ -686,50 +727,37 @@ export function onStartFromHost(fn: (m: StartGameMsg) => void): () => void {
   return () => startListeners.delete(fn);
 }
 
+export function getPendingHostStart(): NonNullable<ReturnType<typeof startGame>> | null {
+  return pendingHostStart;
+}
+
+export function onHostStart(fn: (m: NonNullable<ReturnType<typeof startGame>>) => void): () => void {
+  hostStartListeners.add(fn);
+  return () => hostStartListeners.delete(fn);
+}
+
 // ---- Public API for components ---------------------------------------
 
 export interface CreateLobbyOptions {
+  room: string;
   maxPlayers?: number;
   /** Host's initial map pick — saved in customData so the lobby
    *  browser can show "Hosting: Echo Isles" without a separate
    *  control message. */
   mapPath?: string;
-  password?: string;
 }
 
-export async function createLobby(opts: CreateLobbyOptions = {}): Promise<string> {
-  const playerName = getPlayerName() || 'Anonymous';
+export async function createLobby(opts: CreateLobbyOptions): Promise<string> {
   const mapPath = opts.mapPath ?? DEFAULT_MAP;
 
-  // Pre-load mapInfo so the lobby is announced with the right slot
-  // count + customData from the start. Falls through to the filename
-  // heuristic if the parse fails (e.g. corrupt map file).
+  // Pre-load mapInfo so the room starts with the right fixed map + slot table.
   let mapInfo: MapInfo | null = null;
   try { mapInfo = await getMapInfoForFullPath(mapPath); }
   catch (e) {
-    console.warn('[lobbyClient] mapInfo load failed for default map; using filename heuristic', e);
+    console.warn('[lobbyClient] mapInfo load failed for selected map; using filename heuristic', e);
   }
   const maxFromMap = mapInfo?.humanLikeSlots.length ?? extractMapPlayerCount(mapPath);
-
-  // Best-effort include the host's resolved game version in the lobby's
-  // public customData so the browser can show it on each lobby card and
-  // flag version mismatches before someone joins. Reads from the cache
-  // populated by useGameVersion / AssetUploader — synchronous, no IO.
-  // If the cache is cold (user clicks Host before useGameVersion's
-  // parse completes), we publish null here and updateLobbyHostVersion
-  // can patch it in once the parse settles.
-  const cachedVersion = readCachedGameVersion(readIndex());
-  currentHostVersion = cachedVersion ? {
-    edition: cachedVersion.version.edition,
-    build: cachedVersion.build?.version ?? null,
-  } : null;
-
-  const settings = {
-    public: !opts.password,
-    maxPlayers: opts.maxPlayers ?? maxFromMap,
-    password: opts.password,
-    customData: { mapPath, hostName: playerName, hostVersion: currentHostVersion },
-  };
+  const settings = { alias: opts.room, maxPlayers: opts.maxPlayers ?? maxFromMap };
 
   // Build the initial slot table from mapInfo (when available) so the
   // first frame after createLobby resolves shows the real slot ids
@@ -746,13 +774,23 @@ export async function createLobby(opts: CreateLobbyOptions = {}): Promise<string
   return new Promise<string>((resolve, reject) => {
     pokiBridgeCreateLobby(
       (code) => {
+        console.log('[lobbyClient] createLobby confirmed', { code, selfId: state.selfId });
+        const selfPlayer: LobbyPlayer = {
+          peerId: state.selfId,
+          name: getPlayerName() || 'Anonymous',
+        };
         setState({
+          lobbyCode: code,
           leaderId: state.selfId,
           isHost: true,
+          players: state.players.some(p => p.peerId === state.selfId)
+            ? state.players
+            : [selfPlayer],
           selectedMap: mapPath,
           maxPlayers: settings.maxPlayers,
           slots: initialSlots,
           mapInfo,
+          lastError: '',
         });
         resolve(code);
       },
@@ -762,176 +800,24 @@ export async function createLobby(opts: CreateLobbyOptions = {}): Promise<string
   });
 }
 
-export async function joinLobby(code: string, password?: string): Promise<void> {
+export async function joinLobby(code: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     pokiBridgeJoinLobby(
       code,
-      (info) => {
-        // Strict version gate. The bridge surfaces the host's
-        // customData inline with the join response — by the time we're
-        // in this callback the netlib peer connection IS established,
-        // but the lobby state hasn't been broadcast to the UI yet. If
-        // the build doesn't match, leave immediately and reject so the
-        // caller can surface the reason; the user never sees the
-        // lobby room flash on screen.
-        //
-        // Same rule as describeVersionCompat in LobbyBrowser — applied
-        // here as belt-and-suspenders against:
-        //   - join-by-code (we couldn't pre-flight check there),
-        //   - URL auto-join,
-        //   - a stale lobby list where the host's published version
-        //     differed from what we filtered on a moment ago.
-        const cached = readCachedGameVersion(readIndex());
-        const myBuild = cached?.build?.version ?? null;
-        const reason = checkVersionCompat(info.customData?.hostVersion, myBuild);
-        if (reason !== null) {
-          // Best-effort cleanup; we don't await it because pokiBridge's
-          // leave is fire-and-forget and we want the promise to reject
-          // immediately so the UI can show the error.
-          pokiBridgeLeaveLobby();
-          reject(new Error(reason));
-          return;
-        }
-        // leaderId comes from the 'leader' event (fired by netlib
-        // right after 'lobby' lands the joined packet). Don't pre-
-        // empt it.
+      (_info) => {
         setState({ isHost: false });
         resolve();
       },
       (reason) => reject(new Error(reason)),
-      password,
     );
   });
 }
 
 export function leaveLobby(): void {
-  // Drop the host-version snapshot — we'll re-read the cache on the
-  // next createLobby. Avoids accidentally republishing a stale value
-  // if the user re-stages between hosting sessions.
-  currentHostVersion = null;
+  announceLeaving();
   pokiBridgeLeaveLobby();
 }
 
-export async function listPublicLobbies(): Promise<PublicLobbyEntry[]> {
-  return new Promise<PublicLobbyEntry[]>((resolve, reject) => {
-    pokiBridgeListLobbies(
-      (entries) => resolve(entries),
-      (reason) => reject(new Error(reason)),
-    );
-  });
-}
-
-/** Result of planning a map change — shape needed by the
- *  confirm-kick UI and also fed back into applyMapChange(). */
-export interface MapChangePlan {
-  mapPath: string;
-  mapInfo: MapInfo;
-  /** New slot layout, with surviving occupants placed in slot order
-   *  (host first, then by previous slot index). */
-  newSlots: LobbySlot[];
-  /** Peer ids that would lose their seat. */
-  surplus: string[];
-}
-
-/** Host-only: load + parse the target map, then compute a plan for
- *  the slot rejig (who survives, who gets kicked). Doesn't mutate
- *  state. Throws when mapInfo load fails — the UI surfaces that. */
-export async function planMapChange(mapPath: string): Promise<MapChangePlan> {
-  const mapInfo = await getMapInfoForFullPath(mapPath);
-  const newMaxPlayers = mapInfo.humanLikeSlots.length;
-
-  // Repack current occupants into the new slot table. Host always
-  // survives (they're the one picking the map); other survivors are
-  // kept in their current slot order.
-  const occupied = state.slots.filter(s => s.occupant != null);
-  const hostFirst = occupied.slice().sort((a, b) => {
-    if (a.occupant === state.leaderId) return -1;
-    if (b.occupant === state.leaderId) return 1;
-    return a.index - b.index;
-  });
-  const survivors = hostFirst.slice(0, newMaxPlayers).map(s => s.occupant!);
-  const surplus = hostFirst.slice(newMaxPlayers).map(s => s.occupant!);
-
-  const newSlots = slotsFromMapInfo(mapInfo);
-  survivors.forEach((peerId, i) => {
-    if (i < newSlots.length) newSlots[i] = { ...newSlots[i], occupant: peerId };
-  });
-
-  return { mapPath, mapInfo, newSlots, surplus };
-}
-
-/** Host-only: apply a previously-computed map-change plan. Kicks
- *  surplus peers, updates state, broadcasts the new lobby snapshot,
- *  and republishes maxPlayers + customData to Poki's signaling so
- *  the lobby browser sees the cap. */
-export function applyMapChange(plan: MapChangePlan): void {
-  if (!state.isHost) return;
-
-  // Send kick messages BEFORE mutating state so the messages go out
-  // over still-live RTC channels. Each kicked peer leaves on their
-  // own end; their disconnection then arrives via peerDisconnected,
-  // which is a no-op for slots we've already cleared here.
-  for (const peerId of plan.surplus) {
-    const msg: KickedMsg = { type: 'kicked', reason: 'map changed to a smaller player count' };
-    pokiBridgeSendStringTo(peerId, 'reliable', JSON.stringify(msg));
-  }
-
-  setState({
-    selectedMap: plan.mapPath,
-    maxPlayers: plan.newSlots.length,
-    slots: plan.newSlots,
-    mapInfo: plan.mapInfo,
-  });
-  broadcastLobbyState();
-  pokiBridgeSetLobbySettings(
-    {
-      maxPlayers: plan.newSlots.length,
-      // Re-include hostVersion — setLobbySettings replaces customData
-      // wholesale, so dropping it here would silently strip the version
-      // from the lobby's public listing on the next map change.
-      customData: {
-        mapPath: plan.mapPath,
-        hostName: getPlayerName() || 'Anonymous',
-        hostVersion: currentHostVersion,
-      },
-    },
-    undefined,
-    (reason) => setState({ lastError: 'setLobbySettings: ' + reason }),
-  );
-}
-
-/**
- * Re-publish the lobby's hostVersion after createLobby. Used when
- * the local install's exact build resolves async (useGameVersion's
- * MPQ + PE parse) *after* the lobby was created with a null build.
- * No-op when called while not hosting — joiners don't own the
- * customData.
- */
-export function updateLobbyHostVersion(version: HostVersionInfo): void {
-  if (!state.isHost) return;
-  currentHostVersion = version;
-  pokiBridgeSetLobbySettings(
-    {
-      customData: {
-        mapPath: state.selectedMap,
-        hostName: getPlayerName() || 'Anonymous',
-        hostVersion: currentHostVersion,
-      },
-    },
-    undefined,
-    (reason) => setState({ lastError: 'setLobbySettings: ' + reason }),
-  );
-}
-
-/** Convenience: plan + apply in one step, used when the host picks a
- *  map that doesn't shrink the player count (no kicks → no
- *  confirmation needed). For shrink cases the UI calls planMapChange,
- *  shows the confirm modal, then calls applyMapChange on confirm. */
-export async function setSelectedMap(mapPath: string): Promise<void> {
-  if (!state.isHost) return;
-  const plan = await planMapChange(mapPath);
-  applyMapChange(plan);
-}
 
 /** Host-only: kick a specific peer by id. They receive a 'kicked'
  *  control message and leave the lobby on their side. */
@@ -962,13 +848,14 @@ export function requestSlot(slotIndex: number): void {
 /** Host-side: move self into slotIndex if it's open + joinable. */
 export function moveSelfToSlot(slotIndex: number): void {
   if (!state.isHost) return;
-  if (slotIndex < 0 || slotIndex >= state.maxPlayers) return;
   const slots = state.slots;
-  const target = slots[slotIndex];
+  const targetPos = slots.findIndex(s => s.index === slotIndex);
+  if (targetPos < 0) return;
+  const target = slots[targetPos];
   if (!target || target.occupant !== null) return;
   if (!isSlotJoinable(target, state.mapInfo)) return;
   const moved = slotsWithoutOccupant(slots, state.selfId);
-  moved[slotIndex] = { ...moved[slotIndex], occupant: state.selfId };
+  moved[targetPos] = { ...moved[targetPos], occupant: state.selfId };
   setState({ slots: moved });
   broadcastLobbyState();
 }
@@ -1070,6 +957,15 @@ function slotsWithOccupant(slots: LobbySlot[], slotIndex: number, peerId: string
   return next;
 }
 
+function ensurePeerHasJoinableSlot(slots: LobbySlot[], peerId: string, mapInfo: MapInfo | null): LobbySlot[] {
+  if (slots.some(s => s.occupant === peerId && isSlotJoinable(s, mapInfo))) {
+    return slots;
+  }
+  const cleared = slotsWithoutOccupant(slots, peerId);
+  const idx = cleared.findIndex(s => s.occupant === null && isSlotJoinable(s, mapInfo));
+  return idx >= 0 ? slotsWithOccupant(cleared, idx, peerId) : cleared;
+}
+
 function slotsWithoutOccupant(slots: LobbySlot[], peerId: string): LobbySlot[] {
   let changed = false;
   const next = slots.map(s => {
@@ -1106,8 +1002,8 @@ export function startGame(): {
 } | null {
   if (!state.isHost) return null;
   const sessionTokenToSlot: Record<string, number> = {};
-  const hostSlotIdx = state.slots.findIndex(s => s.occupant === state.selfId);
-  const hostSlot = hostSlotIdx >= 0 ? hostSlotIdx : 0;
+  const hostLobbySlot = state.slots.find(s => s.occupant === state.selfId);
+  const hostSlot = hostLobbySlot?.index ?? 0;
   const hostToken = newSessionToken();
   sessionTokenToSlot[String(hostToken)] = hostSlot;
 
@@ -1137,9 +1033,10 @@ export function startGame(): {
       sessionTokenToSlot,
       slotConfigs,
     };
+    console.log('[lobbyClient] sending start-as-joiner to peer', slot.occupant, 'slot', slot.index);
     pokiBridgeSendStringTo(slot.occupant, 'reliable', JSON.stringify(msg));
   }
-  return {
+  const started = {
     selfId: state.selfId,
     mapPath: state.selectedMap,
     sessionTokens: sessionTokenToSlot,
@@ -1147,6 +1044,9 @@ export function startGame(): {
     hostSlot,
     slotConfigs,
   };
+  pendingHostStart = started;
+  for (const fn of hostStartListeners) try { fn(started); } catch (e) { console.error(e); }
+  return started;
 }
 
 function newSessionToken(): number {
@@ -1241,6 +1141,7 @@ export function buildHostStartPayload(
   mapPath: string, hostPeerId: string, hostToken: string,
   sessionTokenToSlot: Record<string, number>,
   slotConfigs: SlotConfigEntry[],
+  hostSlot: number,
 ): StartPayload {
   const sessionTokens: string[] = [];
   const slots: string[] = [];
@@ -1254,7 +1155,7 @@ export function buildHostStartPayload(
     kind: 'mp-start-as-host',
     mapPath, hostPeerId,
     mySessionToken: hostToken,
-    mySlot: '0',
+    mySlot: String(hostSlot),
     sessionTokens, slots,
     slotConfigIndexes:   flat.indexes,
     slotConfigTypes:     flat.types,

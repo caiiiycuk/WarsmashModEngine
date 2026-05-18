@@ -97,6 +97,19 @@ input[type="text"]:focus, input[type="password"]:focus {
   border-color: var(--accent);
 }
 
+select {
+  font: inherit;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+}
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ==================================================================
    /play page — engine canvas, asset overlay, splash sit in here.
    ================================================================== */
@@ -150,6 +163,40 @@ body.engine-page {
   gap: 0;
   z-index: 50;
   overflow: auto;
+}
+.multiplayer-room-overlay {
+  z-index: 250;
+}
+.room-slot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+.room-slot-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.room-slot-claim {
+  padding: 5px 10px;
+}
+.room-self-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.room-self-config label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.room-self-config select {
+  min-width: 150px;
 }
 .boot-overlay-card {
   width: 100%;

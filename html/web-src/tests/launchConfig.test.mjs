@@ -6,6 +6,10 @@ assert.deepEqual(parseLaunchConfig('?mode=webrtc&room=ABCD&role=host&map=Maps%2F
   ok: true,
   config: { mode: 'webrtc', room: 'ABCD', role: 'host', map: 'Maps/Foo.w3x' },
 });
+assert.deepEqual(parseLaunchConfig('?mode=webrtc&room=ABCD&role=client'), {
+  ok: true,
+  config: { mode: 'webrtc', room: 'ABCD', role: 'client' },
+});
 for (const url of [
   '?mode=webrtc&role=host&map=x',
   '?mode=webrtc&room=r&map=x',

@@ -65,9 +65,60 @@ The app now has one HTML entrypoint and always renders the game shell. Launch mo
 | `?mode=single` | normal single-player/menu boot (the default if `mode` is omitted) |
 | `?mode=single&map=Maps/...` | single-player boot with an optional map hint |
 | `?mode=webrtc&room=ROOM&role=host&map=Maps/...` | multiplayer host bootstrap |
-| `?mode=webrtc&room=ROOM&role=client&map=Maps/...` | multiplayer client bootstrap |
+| `?mode=webrtc&room=ROOM&role=client` | multiplayer client bootstrap |
 
-`room`, `role`, and `map` are required for `mode=webrtc`. Optional match-only slot configuration can be passed as URL-encoded `slots=<json-array>`. Offers, answers, ICE candidates, and other transport internals are deliberately not part of the URL contract.
+For `mode=webrtc`, `room` and `role` are always required. `map` is required only
+for the host: the host fixes the map when creating the room, and joiners receive
+that room state from the host after connecting. Optional match-only slot
+configuration can be passed as URL-encoded `slots=<json-array>`. Offers,
+answers, ICE candidates, and other transport internals are deliberately not part
+of the URL contract.
+
+## Starting a multiplayer match
+
+For a simple two-player smoke test, use `Maps/FrozenThrone/(2)EchoIsles.w3x`
+from a normal TFT install. In the local Warcraft III tree used while writing
+this note, that file lives at:
+
+```text
+Maps/FrozenThrone/(2)EchoIsles.w3x
+```
+
+1. Build and serve the web app:
+
+   ```sh
+   ./html/dev.sh build
+   ./html/dev.sh serve
+   ```
+
+2. Open the host URL in one browser window:
+
+   ```text
+   http://127.0.0.1:8000/?mode=webrtc&role=host&room=test-room&map=Maps%2FFrozenThrone%2F%282%29EchoIsles.w3x
+   ```
+
+3. Open the client URL in another browser window:
+
+   ```text
+   http://127.0.0.1:8000/?mode=webrtc&role=client&room=test-room
+   ```
+
+The host owns the room state: joiners are seated into the first available slot,
+slot settings are synchronized from the host, and the map is not changeable after
+room creation. Once everyone is ready, the host starts the match manually with
+the room's **Start** button.
+
+
+To start write 
+```
+window.postMessage({ 
+	event: "mp.room.netConfig", 
+	netConfig: {
+		debug: true,
+		iceServers: [{ urls: "stun:stun.l.google.com:19302" }] 
+	},
+})
+```
 
 ## Asset staging
 

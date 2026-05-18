@@ -91,7 +91,7 @@ async function w3WithSyncHandle(path, op) {
 	const entry = self._w3Files.get(path);
 	if (!entry) throw new Error('OPFS path not found: ' + path);
 	const fh = await entry.dir.getFileHandle(entry.name);
-	const h = await fh.createSyncAccessHandle();
+	const h = await fh.createSyncAccessHandle({ mode: 'read-only' });
 	try { return op(h, entry.size); }
 	finally { try { h.close(); } catch (e) {} }
 }
@@ -134,7 +134,7 @@ self.w3OpenMpqHandleAsync = async function(path) {
 	const entry = self._w3Files.get(path);
 	if (!entry) throw new Error('OPFS path not found: ' + path);
 	const fh = await entry.dir.getFileHandle(entry.name);
-	const h = await fh.createSyncAccessHandle();
+	const h = await fh.createSyncAccessHandle({ mode: 'read-only' });
 	self._w3MpqHandles.set(path, h);
 	return true;
 };
@@ -168,7 +168,7 @@ self.w3ReadExtractedAsync = async function(relPath) {
 		const parts = String(relPath).split('/').filter(Boolean);
 		for (let i = 0; i < parts.length - 1; i++) dir = await dir.getDirectoryHandle(parts[i]);
 		const fh = await dir.getFileHandle(parts[parts.length - 1]);
-		const h = await fh.createSyncAccessHandle();
+		const h = await fh.createSyncAccessHandle({ mode: 'read-only' });
 		try {
 			const buf = new Int8Array(h.getSize());
 			h.read(buf, { at: 0 });

@@ -42,7 +42,7 @@ export function parseLaunchConfig(search: string): LaunchConfigParseResult {
     if (!roleRaw) errors.push('role is required when mode=webrtc.');
     else if (roleRaw !== 'host' && roleRaw !== 'client') errors.push('role must be "host" or "client".');
     else role = roleRaw;
-    if (!map) errors.push('map is required when mode=webrtc.');
+    if (role === 'host' && !map) errors.push('map is required when mode=webrtc&role=host.');
     slots = parseSlots(p.get('slots'), errors);
   }
 

@@ -8,16 +8,16 @@ export interface MultiplayerTransport {
 }
 
 export async function createMultiplayerTransport(config: LaunchConfig): Promise<MultiplayerTransport> {
-  if (config.mode !== 'webrtc' || !config.room || !config.role || !config.map) {
+  if (config.mode !== 'webrtc' || !config.room || !config.role || (config.role === 'host' && !config.map)) {
     throw new Error('multiplayer transport requires a validated webrtc LaunchConfig');
   }
-  return new PokiMultiplayerTransport({ ...config, room: config.room, role: config.role, map: config.map });
+  return new WebRtcNetMultiplayerTransport({ ...config, room: config.room, role: config.role });
 }
 
-class PokiMultiplayerTransport implements MultiplayerTransport {
+class WebRtcNetMultiplayerTransport implements MultiplayerTransport {
   private disposed = false;
   private detachStartListener: (() => void) | null = null;
-  constructor(private readonly config: Required<Pick<LaunchConfig, 'room' | 'role' | 'map'>> & LaunchConfig) {}
+  constructor(private readonly config: Required<Pick<LaunchConfig, 'room' | 'role'>> & LaunchConfig) {}
 
   async start(): Promise<StartPayload> {
     const lobby = await import('./lobbyClient');
@@ -33,10 +33,7 @@ class PokiMultiplayerTransport implements MultiplayerTransport {
       });
     }
 
-    const actualRoom = await lobby.createLobby({ mapPath: this.config.map });
-    if (actualRoom !== this.config.room) {
-      console.warn(`[multiplayer] transport created room ${actualRoom}; requested room was ${this.config.room}. Current Poki transport cannot choose room ids.`);
-    }
+    await lobby.createLobby({ room: this.config.room, mapPath: this.config.map! });
     for (const slot of this.config.slots ?? []) {
       lobby.updateSlot(slot.index, {
         ...(slot.type ? { slotType: slot.type } : {}),
@@ -46,9 +43,30 @@ class PokiMultiplayerTransport implements MultiplayerTransport {
         ...(slot.handicap !== undefined ? { handicap: slot.handicap } : {}),
       });
     }
-    const started = lobby.startGame();
-    if (!started) throw new Error('host could not create multiplayer start payload');
-    return lobby.buildHostStartPayload(started.mapPath, started.selfId, started.hostToken, started.sessionTokens, started.slotConfigs);
+    return new Promise<StartPayload>((resolve) => {
+      const existing = lobby.getPendingHostStart();
+      if (existing) {
+        resolve(lobby.buildHostStartPayload(
+          existing.mapPath,
+          existing.selfId,
+          existing.hostToken,
+          existing.sessionTokens,
+          existing.slotConfigs,
+          existing.hostSlot,
+        ));
+        return;
+      }
+      this.detachStartListener = lobby.onHostStart((started) => {
+        resolve(lobby.buildHostStartPayload(
+          started.mapPath,
+          started.selfId,
+          started.hostToken,
+          started.sessionTokens,
+          started.slotConfigs,
+          started.hostSlot,
+        ));
+      });
+    });
   }
 
   attachEngineWorker(worker: Worker): void {

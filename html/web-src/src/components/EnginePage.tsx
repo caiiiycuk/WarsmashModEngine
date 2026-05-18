@@ -13,10 +13,22 @@ import {
   type IndexSummary,
 } from '../lib/assetStaging';
 import { bootEngineWorker, type EngineHandle } from '../lib/engineBoot';
-import type { StartPayload } from '../lib/lobbyClient';
+import {
+  buildHostStartPayload,
+  getLobbyState,
+  isSlotJoinable,
+  requestSlot,
+  startGame,
+  subscribeLobbyState,
+  updateSlot,
+  type LobbyState,
+  type StartPayload,
+} from '../lib/lobbyClient';
+import { PlayerRace, raceLabel } from '../lib/mapInfo';
 import type { LaunchConfig } from '../lib/launchConfig';
 import { createMultiplayerTransport, type MultiplayerTransport } from '../lib/multiplayerTransport';
 import { clearOpfs, hasW3Root, installEngineWorkerGlobals, listAllMaps } from '../lib/opfs';
+import { PLAYER_COLORS } from '../lib/playerColors';
 import { acquireWakeLock, installWakeLockReacquire } from '../lib/wakeLock';
 import DesyncOverlay, { type DesyncReportPayload } from './DesyncOverlay';
 
@@ -52,6 +64,8 @@ export default function EnginePage({
   const [errorMsg, setErrorMsg] = useState('');
   const [progressPct, setProgressPct] = useState(0);
   const [desync, setDesync] = useState<DesyncReportPayload | null>(null);
+  const [lobbyState, setLobbyState] = useState<LobbyState>(() => getLobbyState());
+  const [multiplayerLobbyVisible, setMultiplayerLobbyVisible] = useState(launchConfig.mode === 'webrtc');
   const engineHandle = useRef<EngineHandle | null>(null);
   const transport = useRef<MultiplayerTransport | null>(null);
   const menuReady = useRef(false);
@@ -78,6 +92,16 @@ export default function EnginePage({
 
   // ---- Init: install globals, purge legacy state, auto-boot if ready ----
   useEffect(() => {
+    return subscribeLobbyState(setLobbyState);
+  }, []);
+
+  useEffect(() => {
+    if (launchConfig.mode === 'webrtc' && lobbyState.lobbyCode) {
+      hideSplash();
+    }
+  }, [hideSplash, launchConfig.mode, lobbyState.lobbyCode]);
+
+  useEffect(() => {
     let cancelled = false;
     console.log('[EnginePage] hydrated, beginning init.');
     installEngineWorkerGlobals();
@@ -92,6 +116,7 @@ export default function EnginePage({
         })
         .then((payload) => {
           queuedMpStart.current = payload;
+          setMultiplayerLobbyVisible(false);
           sendQueuedMultiplayerStart();
         })
         .catch((err) => setErrorMsg('Multiplayer bootstrap failed: ' + msg(err)));
@@ -294,6 +319,7 @@ export default function EnginePage({
         onMapReached: () => {
           (window as any).__mpInMap = true;
           (window as any).__mpPendingStart = false;
+          setMultiplayerLobbyVisible(false);
           hideSplash();
         },
         onError: (m) => setErrorMsg(m),
@@ -338,14 +364,34 @@ export default function EnginePage({
     const payload = queuedMpStart.current;
     const worker = engineHandle.current?.worker;
     if (!menuReady.current || !payload || !worker) return;
+    console.log('[EnginePage] sending multiplayer start payload to worker:', payload.kind);
     worker.postMessage(payload);
     queuedMpStart.current = null;
+  }
+
+  function startHostedMatch() {
+    const started = startGame();
+    if (!started) return;
+    console.log('[EnginePage] host Start clicked; building local host payload.');
+    queuedMpStart.current = buildHostStartPayload(
+      started.mapPath,
+      started.selfId,
+      started.hostToken,
+      started.sessionTokens,
+      started.slotConfigs,
+      started.hostSlot,
+    );
+    setMultiplayerLobbyVisible(false);
+    sendQueuedMultiplayerStart();
   }
 
   const showOverlay = boot !== 'running';
 
   return (
     <>
+      {launchConfig.mode === 'webrtc' && multiplayerLobbyVisible && (
+        <MultiplayerRoomOverlay lobby={lobbyState} onStart={startHostedMatch} />
+      )}
       {showOverlay && (
         <div class="boot-overlay">
           <div class="boot-overlay-card">
@@ -398,6 +444,96 @@ export default function EnginePage({
         onReload={() => location.reload()}
       />
     </>
+  );
+}
+
+function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart: () => void }) {
+  const mapLabel = lobby.mapInfo?.name || lobby.selectedMap;
+  const selfSlot = lobby.slots.find((slot) => slot.occupant === lobby.selfId) ?? null;
+  const racesLocked = lobby.mapInfo?.fixedPlayerSettings ?? false;
+  return (
+    <div class="boot-overlay multiplayer-room-overlay">
+      <div class="boot-overlay-card">
+        <h1>{lobby.isHost ? 'Hosting multiplayer room' : 'Joining multiplayer room'}</h1>
+        <p><strong>Room:</strong> {lobby.lobbyCode || 'connecting…'}</p>
+        <p><strong>Map:</strong> {mapLabel}</p>
+
+        <h2>Players</h2>
+        <ul class="room-player-list">
+          {lobby.players.map((player) => (
+            <li key={player.peerId}>
+              {player.name}
+              {player.peerId === lobby.leaderId ? ' (host)' : ''}
+            </li>
+          ))}
+        </ul>
+
+        <h2>Slots</h2>
+        <ul class="room-slot-list">
+          {lobby.slots.map((slot) => {
+            const occupant = lobby.players.find((p) => p.peerId === slot.occupant);
+            const isSelf = slot.occupant === lobby.selfId;
+            const canClaim = slot.occupant === null && isSlotJoinable(slot, lobby.mapInfo);
+            return (
+              <li key={slot.index}>
+                <span>
+                  Slot {slot.index + 1}: {occupant?.name ?? slot.type}
+                  {isSelf ? ' (you)' : ''}
+                </span>
+                {canClaim && (
+                  <button class="secondary room-slot-claim" onClick={() => requestSlot(slot.index)}>
+                    Choose
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {selfSlot && (
+          <div class="room-self-config">
+            <h2>Your side</h2>
+            <label>
+              Race
+              <select
+                value={selfSlot.race}
+                disabled={racesLocked}
+                onChange={(e) => updateSlot(selfSlot.index, {
+                  race: Number((e.currentTarget as HTMLSelectElement).value) as PlayerRace,
+                })}
+              >
+                {[
+                  PlayerRace.Selectable,
+                  PlayerRace.Human,
+                  PlayerRace.Orc,
+                  PlayerRace.Undead,
+                  PlayerRace.NightElf,
+                ].map((race) => <option value={race}>{raceLabel(race)}</option>)}
+              </select>
+            </label>
+            <label>
+              Color
+              <select
+                value={selfSlot.color}
+                onChange={(e) => updateSlot(selfSlot.index, {
+                  color: Number((e.currentTarget as HTMLSelectElement).value),
+                })}
+              >
+                {PLAYER_COLORS.map((color) => (
+                  <option value={color.id}>{color.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+
+        {lobby.lastError && <p class="error">{lobby.lastError}</p>}
+
+        {lobby.isHost
+          ? <button class="primary" disabled={!lobby.lobbyCode} onClick={onStart}>Start</button>
+          : <p>Waiting for host to start the match…</p>}
+      </div>
+    </div>
   );
 }
 

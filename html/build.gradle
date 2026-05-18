@@ -60,7 +60,7 @@ task copyWebOverrides {
 }
 
 // Build the Vite+Preact public site from web-src/. This produces the
-// single index.html app shell plus bundled Preact and Poki Netlib
+// single index.html app shell plus bundled Preact and WebRTCNet
 // code. Output lands in web-src/dist/
 // which we then layer over build/dist/webapp/. Skipped if web-src/
 // doesn't exist (so older clones without it still build).
@@ -68,10 +68,10 @@ task copyWebOverrides {
 // Vite replaces the previous Astro build — there's no longer a
 // hand-written index.html in webapp-src/ that ships to prod. The
 // worker bootstraps (engine-worker-boot.js, worker-boot.js) still
-// live in webapp-src/ since they're not @poki/netlib-dependent and
+// live in webapp-src/ since they're not transport-dependent and
 // don't need a bundler; copyWebOverrides handles them.
 task buildWebSrc {
-    description = "Run Vite inside web-src/ to build the single-entry app shell and bundle the Poki Netlib bridge."
+    description = "Run Vite inside web-src/ to build the single-entry app shell and bundle the WebRTCNet bridge."
     onlyIf { file("web-src/package.json").exists() }
     inputs.file file("web-src/package.json")
     inputs.file file("web-src/vite.config.ts")
