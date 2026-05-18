@@ -4,6 +4,28 @@ TeaVM-compiled build that runs the Warsmash engine in the browser. If you're
 on the desktop build, see the root [`README.md`](../README.md) — this file is
 web-only.
 
+## Java environment
+
+This web build currently uses the repo's Gradle wrapper (`Gradle 7.3.3`) and
+targets Java 17. Run it with a JDK 17 environment; newer system JDKs such as
+Java 25 can fail before the build starts with errors like
+`Unsupported class file major version 69`.
+
+On Ubuntu/Debian, install JDK 17 if needed:
+
+```sh
+sudo apt install openjdk-17-jdk
+```
+
+Then select it for the current shell before building:
+
+```sh
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+export PATH="$JAVA_HOME/bin:$PATH"
+
+java -version
+```
+
 ## Quick start
 
 ```sh
