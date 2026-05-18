@@ -31,6 +31,18 @@ export async function getW3Root(create = false): Promise<FileSystemDirectoryHand
   return root.getDirectoryHandle(ROOT_DIR, { create });
 }
 
+/** True when the staged install root still exists in OPFS. The localStorage
+ *  index is only a cache; users/devtools can clear OPFS independently. */
+export async function hasW3Root(): Promise<boolean> {
+  try {
+    await getW3Root(false);
+    return true;
+  }
+  catch {
+    return false;
+  }
+}
+
 /** Walk parent → parent.<a> → parent.<a>.<b> → ..., creating each
  *  directory if missing. Returns the deepest handle. */
 export async function ensureDir(parent: FileSystemDirectoryHandle, parts: string[]): Promise<FileSystemDirectoryHandle> {

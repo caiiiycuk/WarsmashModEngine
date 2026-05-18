@@ -16,7 +16,7 @@ import { bootEngineWorker, type EngineHandle } from '../lib/engineBoot';
 import type { StartPayload } from '../lib/lobbyClient';
 import type { LaunchConfig } from '../lib/launchConfig';
 import { createMultiplayerTransport, type MultiplayerTransport } from '../lib/multiplayerTransport';
-import { clearOpfs, installEngineWorkerGlobals } from '../lib/opfs';
+import { clearOpfs, hasW3Root, installEngineWorkerGlobals, listAllMaps } from '../lib/opfs';
 import { acquireWakeLock, installWakeLockReacquire } from '../lib/wakeLock';
 import DesyncOverlay, { type DesyncReportPayload } from './DesyncOverlay';
 
@@ -112,7 +112,32 @@ export default function EnginePage({
           const s = summarizeIndex(idx);
           setSummary(s);
 
+          // The index is a localStorage cache, not proof that OPFS still
+          // contains the staged install. DevTools/browser cleanup can wipe
+          // OPFS independently and otherwise leave us auto-booting from a
+          // phantom install forever.
+          if (!(await hasW3Root())) {
+            console.warn('[EnginePage] staged asset index exists, but OPFS /w3 is missing; resetting stale index.');
+            writeIndex([]);
+            setSummary({ fileCount: 0, mpqCount: 0, mapCount: 0, totalBytes: 0 });
+            setStatusMsg('Staged install was not found in browser storage. Select your Warcraft III folder again.');
+            setBoot('no-assets');
+            return;
+          }
+
           if (s.mapCount > 0) {
+            // Cheap reality check against the actual Maps subtree. This catches
+            // a second stale-index case where OPFS still has /w3 but its staged
+            // map files were deleted underneath the cached index.
+            const actualMaps = await listAllMaps();
+            if (actualMaps.length === 0) {
+              console.warn('[EnginePage] staged asset index reports maps, but OPFS has none; resetting stale index.');
+              writeIndex([]);
+              setSummary({ fileCount: 0, mpqCount: 0, mapCount: 0, totalBytes: 0 });
+              setStatusMsg('Staged maps were not found in browser storage. Select your Warcraft III folder again.');
+              setBoot('no-assets');
+              return;
+            }
             console.log('[EnginePage] staged assets present, auto-booting engine.');
             await tryBootEngine();
           }
