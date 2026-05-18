@@ -44,12 +44,17 @@ After one full engine build, UI-only changes do not need another Java/TeaVM comp
 
 ```sh
 ./gradlew :html:buildWeb                 # once: produce app.js, workers, and engine assets
-cd html/web-src && npm run build         # rebuild only the Vite frontend
-cp -R dist/. ../build/dist/webapp/       # layer the fresh UI over reused engine output
-cd ../build/dist/webapp && python3 -m http.server 8000
+cd html/web-src && npm run vite          # Vite dev server + HMR for the frontend
 ```
 
-This loop updates only the Vite/Preact UI from `html/web-src`. If Java, TeaVM, worker boot code, or engine-side resources change, run the full Gradle build again before testing.
+Then open the URL printed by Vite, for example <http://127.0.0.1:5173/?mode=single>.
+In dev mode, Vite serves the live Preact frontend from `html/web-src` and transparently
+falls back to the already-built engine files in `html/build/dist/webapp`, so there is no
+manual `dist/` copy step while iterating on UI code.
+
+If Java, TeaVM, worker boot code, or engine-side resources change, run the full Gradle
+build again before testing so the fallback engine artifacts are refreshed. For a
+production-like local run, keep using the build-and-serve flow above.
 
 ## Launch URL contract
 
