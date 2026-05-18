@@ -162,17 +162,16 @@ public class MapInfoPane {
 			minimapTexture = rootFrame.loadTexture("ui\\widgets\\glues\\minimap-unknown.blp");
 		}
 		else {
-			try {
-				minimapTexture = ImageUtils.getAnyExtensionTexture(map, "war3mapPreview.blp");
-				if (minimapTexture != null) {
-					this.lastUnmanagedTexture = minimapTexture;
-				}
+			minimapTexture = loadFirstAvailableMapTexture(map,
+					"war3mapPreview.tga",
+					"war3mapPreview.blp",
+					"war3mapMap.tga",
+					"war3mapMap.blp");
+			if (minimapTexture != null) {
+				this.lastUnmanagedTexture = minimapTexture;
 			}
-			catch (final Exception exc) {
-				minimapTexture = ImageUtils.getAnyExtensionTexture(map, "war3mapMap.blp");
-				if (minimapTexture != null) {
-					this.lastUnmanagedTexture = minimapTexture;
-				}
+			else {
+				minimapTexture = rootFrame.loadTexture("ui\\widgets\\glues\\minimap-unknown.blp");
 			}
 		}
 		this.minimapImageTextureFrame.setTexture(minimapTexture);
@@ -180,6 +179,15 @@ public class MapInfoPane {
 		this.mapInfoPaneFrame.positionBounds(rootFrame, uiViewport);
 
 		toggleMapInfo(true);
+	}
+
+	private static Texture loadFirstAvailableMapTexture(final War3Map map, final String... paths) {
+		for (final String path : paths) {
+			if (map.has(path)) {
+				return ImageUtils.getAnyExtensionTexture(map, path);
+			}
+		}
+		return null;
 	}
 
 	public void toggleMapInfo(final boolean visible){
