@@ -3,6 +3,7 @@ package com.etheller.warsmash.html;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.etheller.warsmash.datasources.DataSource;
 import com.etheller.warsmash.parsers.fdf.DynamicFontGeneratorHolder;
@@ -11,15 +12,14 @@ import com.etheller.warsmash.parsers.fdf.FontParameter;
 import com.etheller.warsmash.units.Element;
 
 /**
- * Web stub for {@link DynamicFontGeneratorHolder}. Returns libgdx's built-in
- * default BitmapFont (the Liberation-Sans-derived {@code lsans-15} atlas that
- * already ships with the web build's copied assets) for every font name and
- * size.
+ * Web implementation for {@link DynamicFontGeneratorHolder}. Uses one bundled
+ * bitmap font for every logical font name and size. The atlas includes Latin and
+ * Cyrillic glyphs so localized MPQ strings remain readable even though the web
+ * build cannot use libgdx-freetype at runtime.
  *
- * <p>This is the bare-minimum implementation that unblocks {@code MenuUI}
- * construction on web — the text won't look like classic WC3 yet, but every
- * layout and click target becomes reachable. Proper pre-baked BitmapFonts
- * matching the skin's FRIZQT__/MORPHEUS/etc. TTFs come in a follow-up.
+ * <p>This keeps the web path intentionally simple. It is not yet a per-skin,
+ * per-size recreation of WC3's TTFs, but it avoids missing-glyph boxes for
+ * localized UI text without pulling FreeType into the TeaVM reachability graph.
  *
  * <p>Crucially, this file contains zero {@code gdx.graphics.g2d.freetype.*}
  * references, so installing it on web keeps FreeType entirely off the
@@ -39,7 +39,7 @@ final class WebDynamicFontGeneratorHolder implements DynamicFontGeneratorHolder 
 	public FontGeneratorHolder getFontGenerator(final String font) {
 		FontGeneratorHolder holder = this.fontNameToGenerator.get(font);
 		if (holder == null) {
-			holder = new StubHolder();
+			holder = new BundledHolder();
 			this.fontNameToGenerator.put(font, holder);
 		}
 		return holder;
@@ -54,28 +54,26 @@ final class WebDynamicFontGeneratorHolder implements DynamicFontGeneratorHolder 
 	}
 
 	/**
-	 * Placeholder: uses libgdx's built-in default BitmapFont for every request.
-	 * {@code new BitmapFont()} loads {@code com/badlogic/gdx/utils/lsans-15.fnt},
-	 * which is already in the web build's classpath / copied-assets set. The
-	 * {@code parameter.size} is currently ignored — libgdx's default BitmapFont
-	 * is fixed-size; swap in per-size pre-baked fonts here once we ship them.
+	 * Uses a single pre-baked bitmap font for every request. The
+	 * {@code parameter.size} is currently ignored, matching the previous web
+	 * behavior; the only change is that the bundled atlas now contains Cyrillic.
 	 */
-	private static final class StubHolder implements FontGeneratorHolder {
-		private BitmapFont defaultFont;
+	private static final class BundledHolder implements FontGeneratorHolder {
+		private BitmapFont bundledFont;
 
 		@Override
 		public BitmapFont generateFont(final FontParameter parameter) {
-			if (this.defaultFont == null) {
-				this.defaultFont = new BitmapFont();
+			if (this.bundledFont == null) {
+				this.bundledFont = new BitmapFont(Gdx.files.internal("fonts/web-cyrillic.fnt"));
 			}
-			return this.defaultFont;
+			return this.bundledFont;
 		}
 
 		@Override
 		public void dispose() {
-			if (this.defaultFont != null) {
-				this.defaultFont.dispose();
-				this.defaultFont = null;
+			if (this.bundledFont != null) {
+				this.bundledFont.dispose();
+				this.bundledFont = null;
 			}
 		}
 	}
