@@ -88,7 +88,7 @@ export default function DesyncOverlay({ payload, onReload }: Props) {
           <button class="danger" onClick={onReload}>Reload page</button>
           <span class="desync-copy-status">{copyStatus}</span>
         </div>
-        <textarea readonly value={text} class="desync-textarea" />
+        <textarea readOnly value={text} class="desync-textarea" />
       </div>
     </div>
   );

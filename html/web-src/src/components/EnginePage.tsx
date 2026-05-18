@@ -1,30 +1,10 @@
 /**
- * EnginePage — the orchestrator for the /play route. Auto-boots the
- * engine when assets are staged, so clicking "Play" on the landing
- * page drops the user straight into the game with no intermediate
- * "Play game" click. Only first-time visitors (no install staged)
- * see an upload prompt; once they pick their folder, staging runs
- * and the engine boots immediately on completion.
+ * EnginePage — the single-entry game orchestrator.
  *
- * Boot state machine:
- *   loading   — initial OPFS read
- *   no-assets — first-time setup card with folder picker
- *   staging   — upload progress bar
- *   running   — engine alive (canvas + splash visible underneath)
- *
- * Map management (the previous "Manage maps" button) lives at
- * /assets now; /play is purely "I want to play right now".
- *
- * Multiplayer integration: a couple of globals are exposed so the
- * /multiplayer page can drive engine boot remotely:
- *   window.__startEngine()   — kick off the engine, equivalent to
- *                              what the auto-boot path does
- *   window.__engineStarted() — has the engine been booted?
- *   window.__attachWorker(w) — multiplayer page hooks the engine
- *                              worker for postMessage routing
- *
- * The desync overlay is rendered here too so it can sit above the
- * canvas without a separate root.
+ * It keeps the inline first-run asset uploader, boots immediately when
+ * staged assets are already present, and receives multiplayer startup
+ * from the launch transport rather than from route-to-route lobby UI
+ * handoff. The DOM shell itself is rendered by App.tsx.
  */
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import {
@@ -33,10 +13,9 @@ import {
   type IndexSummary,
 } from '../lib/assetStaging';
 import { bootEngineWorker, type EngineHandle } from '../lib/engineBoot';
-import {
-  attachEngineWorker, consumeStartPayload, getLobbyState,
-  type StartPayload,
-} from '../lib/lobbyClient';
+import type { StartPayload } from '../lib/lobbyClient';
+import type { LaunchConfig } from '../lib/launchConfig';
+import { createMultiplayerTransport, type MultiplayerTransport } from '../lib/multiplayerTransport';
 import { clearOpfs, installEngineWorkerGlobals } from '../lib/opfs';
 import { acquireWakeLock, installWakeLockReacquire } from '../lib/wakeLock';
 import DesyncOverlay, { type DesyncReportPayload } from './DesyncOverlay';
@@ -52,15 +31,17 @@ declare global {
 }
 
 interface Props {
-  /** id of the canvas element rendered by the host Astro page. */
+  launchConfig: LaunchConfig;
+  /** id of the canvas element rendered by the app shell. */
   canvasId?: string;
-  /** id of the splash element rendered by the host Astro page. */
+  /** id of the splash element rendered by the app shell. */
   splashId?: string;
   /** id of the canvas wrapper element (toggles between display:none/flex). */
   canvasWrapId?: string;
 }
 
 export default function EnginePage({
+  launchConfig,
   canvasId = 'canvas',
   splashId = 'splash',
   canvasWrapId = 'canvas-wrap',
@@ -72,18 +53,20 @@ export default function EnginePage({
   const [progressPct, setProgressPct] = useState(0);
   const [desync, setDesync] = useState<DesyncReportPayload | null>(null);
   const engineHandle = useRef<EngineHandle | null>(null);
+  const transport = useRef<MultiplayerTransport | null>(null);
+  const menuReady = useRef(false);
   const sessionDirty = useRef(false);
   /** Multiplayer start payload waiting to be forwarded to the engine
    *  worker once it reaches the menu screen. Populated either via
-   *  consumeStartPayload (post-nav from /multiplayer) or via the lobby
-   *  module's onStartFromHost firing while /play is already loaded. */
+   *  launch transport once it has resolved enough runtime state to form
+   *  the engine-facing payload. */
   const queuedMpStart = useRef<StartPayload | null>(null);
   /** Guards onPlay against being called twice (e.g. from auto-boot
    *  AND from a manual click). */
   const bootInFlight = useRef(false);
 
   // Splash control — imperative because the splash element lives in
-  // the Astro server-rendered tree, not inside this component.
+  // the outer app shell, not inside this component.
   const showSplash = useCallback(() => {
     const el = document.getElementById(splashId);
     if (el) el.style.display = 'flex';
@@ -100,6 +83,20 @@ export default function EnginePage({
     installEngineWorkerGlobals();
     installWakeLockReacquire(() => sessionDirty.current || boot === 'running');
 
+    if (launchConfig.mode === 'webrtc') {
+      (window as any).__mpPendingStart = true;
+      void createMultiplayerTransport(launchConfig)
+        .then((t) => {
+          transport.current = t;
+          return t.start();
+        })
+        .then((payload) => {
+          queuedMpStart.current = payload;
+          sendQueuedMultiplayerStart();
+        })
+        .catch((err) => setErrorMsg('Multiplayer bootstrap failed: ' + msg(err)));
+    }
+
     (async () => {
       try {
         if (!('storage' in navigator) || !navigator.storage.getDirectory) {
@@ -114,15 +111,6 @@ export default function EnginePage({
           const idx = readIndex();
           const s = summarizeIndex(idx);
           setSummary(s);
-
-          // Stash any pending multiplayer payload BEFORE auto-booting
-          // so the engine worker picks it up on its first menu-ready
-          // event (otherwise we'd race with consumeStartPayload).
-          const mpPayload = consumeStartPayload();
-          if (mpPayload) {
-            queuedMpStart.current = mpPayload;
-            (window as any).__mpPendingStart = true;
-          }
 
           if (s.mapCount > 0) {
             console.log('[EnginePage] staged assets present, auto-booting engine.');
@@ -145,11 +133,11 @@ export default function EnginePage({
         setBoot('no-assets');
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; transport.current?.dispose(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---- Expose engine-control globals for /multiplayer to call ----
+  // ---- Preserve compatibility engine-control globals ----
   useEffect(() => {
     window.__startEngine = () => { void tryBootEngine(); };
     window.__engineStarted = () => boot === 'running';
@@ -261,9 +249,7 @@ export default function EnginePage({
         // Java sees no selfId.
         onWorkerReady: (worker) => {
           window.__attachWorker?.(worker);
-          if (getLobbyState().lobbyCode) {
-            attachEngineWorker(worker);
-          }
+          transport.current?.attachEngineWorker(worker);
         },
         onMenuReady: () => {
           // Multiplayer: if a queued start is waiting, fire it now —
@@ -271,10 +257,8 @@ export default function EnginePage({
           // mp-start-as-{host,joiner}. The engine then transitions
           // through WarsmashGdxMenuScreen → WarsmashGdxMapScreen on
           // its own, masked by the splash overlay.
-          if (queuedMpStart.current && handle.worker) {
-            handle.worker.postMessage(queuedMpStart.current);
-            queuedMpStart.current = null;
-          }
+          menuReady.current = true;
+          sendQueuedMultiplayerStart();
           // Splash stays up if a multiplayer start is pending — drops
           // once the engine reaches the actual map. Single-player
           // flow drops it here.
@@ -325,13 +309,20 @@ export default function EnginePage({
     }
   }
 
+  function sendQueuedMultiplayerStart() {
+    const payload = queuedMpStart.current;
+    const worker = engineHandle.current?.worker;
+    if (!menuReady.current || !payload || !worker) return;
+    worker.postMessage(payload);
+    queuedMpStart.current = null;
+  }
+
   const showOverlay = boot !== 'running';
 
   return (
     <>
       {showOverlay && (
         <div class="boot-overlay">
-          <a class="boot-overlay-back" href="../">← Back to home</a>
           <div class="boot-overlay-card">
             {boot === 'loading' && <p class="boot-status">Reading staged install…</p>}
 
@@ -360,7 +351,6 @@ export default function EnginePage({
                     disabled={boot === 'staging'}
                     onChange={onDirectoryPick}
                   />
-                  <a class="btn secondary" href="../assets/">Manage assets</a>
                 </div>
                 {boot === 'staging' && (
                   <div class="progress">

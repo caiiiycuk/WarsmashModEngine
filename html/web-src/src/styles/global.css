@@ -1404,3 +1404,23 @@ a.btn {
     grid-template-columns: 1fr;
   }
 }
+
+#splash {
+  position: fixed; inset: 0; z-index: 200; display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 24px; background: #000;
+}
+#splash img {
+  max-width: 60vw; max-height: 60vh; object-fit: contain;
+  image-rendering: -webkit-optimize-contrast; user-select: none; -webkit-user-drag: none;
+}
+#splash .label { color: #c8d8f1; font-size: 16px; letter-spacing: .5px; }
+#splash .label::after {
+  content: ''; display: inline-block; width: 1.5em; text-align: left;
+  animation: splash-dots 1.2s steps(4, end) infinite;
+}
+@keyframes splash-dots {
+  0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; }
+  75% { content: '...'; } 100% { content: ''; }
+}
+.launch-errors { margin: 0; color: var(--error); }

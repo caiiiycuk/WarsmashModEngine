@@ -200,7 +200,7 @@ export function pokiBridgeSendBytesTo (peerId: string, channel: string, int8: In
   const buf = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
     ? u8.buffer
     : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
-  net.send(channel, peerId, buf)
+  net.send(channel, peerId, buf as ArrayBuffer)
 }
 
 // Broadcast raw bytes to all connected peers over the named channel.
@@ -211,7 +211,7 @@ export function pokiBridgeBroadcastBytes (channel: string, int8: Int8Array): voi
   const buf = (u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength)
     ? u8.buffer
     : u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
-  net.broadcast(channel, buf)
+  net.broadcast(channel, buf as ArrayBuffer)
 }
 
 // Send a UTF-8 string to a specific peer over the named channel. Used
@@ -299,10 +299,7 @@ export function pokiBridgeClose (): void {
 // New code in the web-src/ codebase imports the functions directly,
 // but we still install globals for two reasons:
 //   1. TeaVM's PokiNetlibBridge.java @JSBody calls reach for them.
-//   2. The persistent <script> in Layout.astro can warm up the bridge
-//      from a vanilla <script> tag (Astro view-transitions inline a
-//      separate <script> for hydration, but a static script tag with
-//      transition:persist runs once and stays alive across navs).
+//   2. Legacy engine-facing code still expects this global bridge shape.
 const target: any = (typeof globalThis !== 'undefined') ? globalThis : self
 target.pokiBridgeInit            = pokiBridgeInit
 target.pokiBridgeCreateLobby     = pokiBridgeCreateLobby

@@ -59,23 +59,22 @@ task copyWebOverrides {
     }
 }
 
-// Build the Astro+Preact public site from web-src/. This produces the
-// landing page (index.html), the engine page (play/index.html), the
-// multiplayer pages (multiplayer/index.html), plus all the Preact
-// islands and the Poki Netlib bridge. Output lands in web-src/dist/
+// Build the Vite+Preact public site from web-src/. This produces the
+// single index.html app shell plus bundled Preact and Poki Netlib
+// code. Output lands in web-src/dist/
 // which we then layer over build/dist/webapp/. Skipped if web-src/
 // doesn't exist (so older clones without it still build).
 //
-// Astro replaces the previous parcel build — there's no longer a
+// Vite replaces the previous Astro build — there's no longer a
 // hand-written index.html in webapp-src/ that ships to prod. The
 // worker bootstraps (engine-worker-boot.js, worker-boot.js) still
 // live in webapp-src/ since they're not @poki/netlib-dependent and
 // don't need a bundler; copyWebOverrides handles them.
 task buildWebSrc {
-    description = "Run Astro inside web-src/ to build the public site (landing, /play, /multiplayer) and bundle the Poki Netlib bridge."
+    description = "Run Vite inside web-src/ to build the single-entry app shell and bundle the Poki Netlib bridge."
     onlyIf { file("web-src/package.json").exists() }
     inputs.file file("web-src/package.json")
-    inputs.file file("web-src/astro.config.mjs")
+    inputs.file file("web-src/vite.config.ts")
     inputs.file file("web-src/tsconfig.json")
     inputs.dir file("web-src/src")
     inputs.dir file("web-src/public")
@@ -92,13 +91,19 @@ task buildWebSrc {
             workingDir workDir
             commandLine "npm", "run", "build"
         }
-        // Layer Astro's dist/ over the webapp output. Astro emits an
+        // Remove legacy multi-page HTML left by older Astro builds so a
+        // non-clean incremental build cannot keep serving deleted flows.
+        delete "build/dist/webapp/play/index.html"
+        delete "build/dist/webapp/multiplayer/index.html"
+        delete "build/dist/webapp/assets/index.html"
+
+        // Layer Vite's dist/ over the webapp output. Vite emits an
         // index.html that supersedes the legacy webapp-src/index.html
         // copied by copyWebOverrides — we depend on this task running
         // AFTER copyWebOverrides for the overwrite to be the one the
         // user sees in production. The TeaVM-built engine artefacts
         // (app.js, engine-worker.js, assets/, etc.) live alongside
-        // Astro's pages and remain untouched.
+        // Vite's app shell and remain untouched.
         copy {
             from "web-src/dist"
             into "build/dist/webapp"
@@ -110,8 +115,7 @@ buildWeb.finalizedBy copyWebOverrides
 buildWeb.finalizedBy buildWorker
 buildWeb.finalizedBy buildEngineWorker
 buildWeb.finalizedBy buildWebSrc
-// Strict ordering: Astro's index.html / play/index.html / multiplayer/
-// index.html must overwrite anything copyWebOverrides put down, so the
+// Strict ordering: Vite's single index.html must overwrite anything copyWebOverrides put down, so the
 // site behaves consistently regardless of finalizer-add order.
 buildWebSrc.mustRunAfter copyWebOverrides
 

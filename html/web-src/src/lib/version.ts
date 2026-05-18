@@ -15,12 +15,9 @@ export const BUILD_ID = String(Date.now());
 /** Append `?v=<BUILD_ID>` to a path — used for any asset whose URL
  *  needs to invalidate when a new build is deployed.
  *
- *  Anchors to the site root so it works the same whether the caller
- *  runs from /index.html or /play/index.html. The engine-worker
- *  bootstrap, splash image, CHANGELOG, scripts/howler.js etc. all
- *  live at the top level of webapp/ regardless of which route is
- *  referencing them. */
+ *  Uses a relative URL because the app now has one HTML entrypoint and
+ *  Vite output is intentionally deployable below an arbitrary base path. */
 export function versionedAsset(path: string): string {
-  const cleaned = path.startsWith('/') ? path : '/' + path;
-  return `${cleaned}?v=${encodeURIComponent(BUILD_ID)}`;
+  const cleaned = path.replace(/^\/+/, '');
+  return `./${cleaned}?v=${encodeURIComponent(BUILD_ID)}`;
 }

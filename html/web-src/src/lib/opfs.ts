@@ -76,7 +76,7 @@ export async function listAllMaps(): Promise<MapEntry[]> {
   }
   const out: MapEntry[] = [];
   async function walk(dir: FileSystemDirectoryHandle, parts: string[]): Promise<void> {
-    // @ts-expect-error — entries() is real on FileSystemDirectoryHandle but TS lib lags.
+    // @ts-ignore — entries() is real on FileSystemDirectoryHandle but TS lib lags.
     for await (const [name, handle] of dir.entries()) {
       if (handle.kind === 'directory') {
         await walk(handle as FileSystemDirectoryHandle, parts.concat(name));
@@ -175,7 +175,7 @@ export function installEngineWorkerGlobals(): void {
     catch { return ''; }
     const out: string[] = [];
     async function walk(dir: FileSystemDirectoryHandle, prefix: string): Promise<void> {
-      // @ts-expect-error — entries() is real on FileSystemDirectoryHandle.
+      // @ts-ignore — entries() is real on FileSystemDirectoryHandle.
       for await (const [name, handle] of dir.entries()) {
         const p = prefix + name;
         if (handle.kind === 'directory') {

@@ -34,8 +34,35 @@ java -version
 ./html/dev.sh dev      # build + serve, one shot
 ```
 
-Then open <http://127.0.0.1:8000/>. Hard-reload (⌘⇧R / Ctrl⇧R) after rebuilds
+Then open <http://127.0.0.1:8000/?mode=single>. Hard-reload (⌘⇧R / Ctrl⇧R) after rebuilds
 to bust `app.js?v=…` cache.
+
+
+## Fast frontend-only iteration
+
+After one full engine build, UI-only changes do not need another Java/TeaVM compile:
+
+```sh
+./gradlew :html:buildWeb                 # once: produce app.js, workers, and engine assets
+cd html/web-src && npm run build         # rebuild only the Vite frontend
+cp -R dist/. ../build/dist/webapp/       # layer the fresh UI over reused engine output
+cd ../build/dist/webapp && python3 -m http.server 8000
+```
+
+This loop updates only the Vite/Preact UI from `html/web-src`. If Java, TeaVM, worker boot code, or engine-side resources change, run the full Gradle build again before testing.
+
+## Launch URL contract
+
+The app now has one HTML entrypoint and always renders the game shell. Launch mode is fixed at page load by query params:
+
+| params | meaning |
+|---|---|
+| `?mode=single` | normal single-player/menu boot (the default if `mode` is omitted) |
+| `?mode=single&map=Maps/...` | single-player boot with an optional map hint |
+| `?mode=webrtc&room=ROOM&role=host&map=Maps/...` | multiplayer host bootstrap |
+| `?mode=webrtc&room=ROOM&role=client&map=Maps/...` | multiplayer client bootstrap |
+
+`room`, `role`, and `map` are required for `mode=webrtc`. Optional match-only slot configuration can be passed as URL-encoded `slots=<json-array>`. Offers, answers, ICE candidates, and other transport internals are deliberately not part of the URL contract.
 
 ## Asset staging
 
