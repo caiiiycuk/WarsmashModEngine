@@ -443,9 +443,7 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
   const selfSlot = lobby.slots.find((slot) => slot.occupant === lobby.selfId) ?? null;
   const racesLocked = lobby.mapInfo?.fixedPlayerSettings ?? false;
   const hasTeams = lobby.mapInfo?.useCustomForces === true && (lobby.mapInfo?.forces.length ?? 0) > 0;
-  const occupiedCount = lobby.slots.filter((slot) => slot.occupant !== null).length;
-  const peerCount = occupiedCount - (lobby.isHost ? 1 : 0);
-  const canStart = lobby.isHost && peerCount >= 1;
+  const canStart = lobby.isHost && selfSlot !== null;
   return (
     <div class="boot-overlay multiplayer-room-overlay">
       <div class="boot-overlay-card">
@@ -494,9 +492,6 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
                     >
                       <option value="open">Open</option>
                       <option value="closed">Closed</option>
-                      <option value="computer-newbie">Computer (Easy)</option>
-                      <option value="computer-normal">Computer (Normal)</option>
-                      <option value="computer-insane">Computer (Insane)</option>
                     </select>
                   )}
                   {canClaim && (
