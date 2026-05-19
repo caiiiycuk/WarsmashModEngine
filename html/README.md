@@ -94,13 +94,13 @@ Maps/FrozenThrone/(2)EchoIsles.w3x
 2. Open the host URL in one browser window:
 
    ```text
-   http://127.0.0.1:8000/?mode=webrtc&role=host&room=test-room&map=Maps%2FFrozenThrone%2F%282%29EchoIsles.w3x
+http://localhost:5173/?mode=webrtc&role=host&room=test-room&map=Maps%2FFrozenThrone%2F%282%29EchoIsles.w3x
    ```
 
 3. Open the client URL in another browser window:
 
    ```text
-   http://127.0.0.1:8000/?mode=webrtc&role=client&room=test-room
+http://localhost:5173/?mode=webrtc&role=client&room=test-room
    ```
 
 The host owns the room state: joiners are seated into the first available slot,

@@ -110,8 +110,8 @@ async function ensureNet(): Promise<Net> {
   }, 3000);
 
   const params = new URLSearchParams(window.location.search);
-  // const netEndpoint = (params.get("net") ?? "wss://net.dos.zone");
-  const netEndpoint = "ws://127.0.0.1:8080";
+  const netEndpoint = (params.get("net") ?? "wss://net.dos.zone");
+  // const netEndpoint = "ws://127.0.0.1:8080";
   const netToken = "war3ft";
   const netSecret = "aslkdnionwqeasdqw";
   net = await createNet(netEndpoint, netToken, netSecret,
