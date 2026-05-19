@@ -496,7 +496,7 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
                   </span>
                 </span>
                 <div class="room-slot-actions">
-                  {lobby.isHost && (
+                  {false && lobby.isHost && (
                     <select
                       class="room-slot-type-select"
                       value={slot.type}
