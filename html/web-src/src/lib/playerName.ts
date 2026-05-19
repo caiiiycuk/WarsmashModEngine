@@ -1,6 +1,7 @@
 /**
- * Player-name persistence. Stored in localStorage under a stable key
- * so refreshes / new tabs / different days all read the same value.
+ * Player-name persistence. A URL query param `name` takes priority;
+ * otherwise the name is stored in localStorage under a stable key so
+ * refreshes / new tabs / different days all read the same value.
  *
  * The first visit to /multiplayer prompts for a name; once stored,
  * it threads through the lobby (peer list, control messages) and into
@@ -17,8 +18,23 @@ const MAX_LEN = 24;
 
 export function getPlayerName(): string {
   try {
+    const fromQuery = getPlayerNameFromSearch(window.location.search);
+    if (fromQuery) return fromQuery;
+  }
+  catch { /* non-browser / inaccessible location */ }
+
+  try {
     const raw = localStorage.getItem(KEY);
     return raw ? sanitize(raw) : '';
+  }
+  catch {
+    return '';
+  }
+}
+
+export function getPlayerNameFromSearch(search: string): string {
+  try {
+    return sanitize(new URLSearchParams(search).get('name') ?? '');
   }
   catch {
     return '';

@@ -610,6 +610,13 @@ function handleControlMessage(peerId: string, payload: string): void {
     case 'introduce': {
       const next = state.players.map(p => p.peerId === peerId ? { ...p, name: msg.name } : p);
       setState({ players: next });
+      // Joiners may have sent their initial introduce before the
+      // host's reliable channel was ready. Once the host can talk to
+      // us, reply directly so the host replaces its temporary
+      // "Anonymous" row with our actual query/localStorage name.
+      if (!state.isHost && peerId === state.leaderId) {
+        announceSelfTo(peerId);
+      }
       break;
     }
     case 'leaving': {
@@ -656,6 +663,9 @@ function handleControlMessage(peerId: string, payload: string): void {
           .catch((e) => {
             console.warn('[lobbyClient] joiner mapInfo load failed for', incomingMapPath, e);
           });
+      }
+      if (!state.isHost) {
+        announceSelfTo(peerId);
       }
       (globalThis as any).pokiBridgeLobbyStateReceived?.();
       break;

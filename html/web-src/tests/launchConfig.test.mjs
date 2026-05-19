@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { parseLaunchConfig } from '../src/lib/launchConfig.ts';
+import { getPlayerNameFromSearch } from '../src/lib/playerName.ts';
 
 assert.deepEqual(parseLaunchConfig('?mode=single'), { ok: true, config: { mode: 'single' } });
 assert.deepEqual(parseLaunchConfig('?mode=webrtc&room=ABCD&role=host&map=Maps%2FFoo.w3x'), {
@@ -19,3 +20,8 @@ for (const url of [
 ]) {
   assert.equal(parseLaunchConfig(url).ok, false, url);
 }
+
+assert.equal(getPlayerNameFromSearch('?name=Arthas'), 'Arthas');
+assert.equal(getPlayerNameFromSearch('?mode=webrtc&name=Jaina%20Proudmoore'), 'Jaina Proudmoore');
+assert.equal(getPlayerNameFromSearch('?name=%20%20'), '');
+assert.equal(getPlayerNameFromSearch('?name=One%0ATwo'), 'One Two');
