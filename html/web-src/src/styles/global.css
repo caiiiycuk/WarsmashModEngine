@@ -179,24 +179,69 @@ body.engine-page {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.room-slot-summary {
+  min-width: 180px;
+  flex: 1 1 240px;
+}
+.room-slot-title {
+  display: inline;
+}
+.room-slot-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.room-color-chip {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 2px;
+  display: inline-block;
+}
+.room-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .room-slot-claim {
   padding: 5px 10px;
+}
+.room-slot-type-select {
+  min-width: 96px;
 }
 .room-self-config {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.room-self-config label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+.room-slot-config {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 8px;
+  width: 100%;
 }
-.room-self-config select {
-  min-width: 150px;
+.room-self-config .room-slot-config {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.room-slot-config label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.room-slot-config select {
+  width: 100%;
+  min-width: 0;
 }
 .boot-overlay-card {
   width: 100%;

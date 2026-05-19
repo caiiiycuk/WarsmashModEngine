@@ -66,11 +66,10 @@ export interface LobbyPlayer {
 }
 
 /** Status of a slot independent of who occupies it.
- *   - `open`   = anyone may claim (default)
+ *   - `open` = anyone may claim (default)
  *   - `closed` = host has locked the slot; nobody may claim
- *  AI/Computer slot fillers aren't supported by our engine port,
- *  so they're not in this enum. */
-export type LobbySlotType = 'open' | 'closed';
+ *   - `computer-*` = AI player with the selected WC3 difficulty */
+export type LobbySlotType = 'open' | 'closed' | 'computer-newbie' | 'computer-normal' | 'computer-insane';
 
 export interface LobbySlot {
   /** Slot id from the map's w3i (matches mapInfo.players[i].id when
@@ -212,7 +211,7 @@ function teamForSlot(slotId: number, forces: MapForce[]): number {
  *  (they're predetermined AI). For melee maps every map slot is
  *  joinable (host overrides the map's slot-type defaults). */
 export function isSlotJoinable(slot: LobbySlot, mapInfo: MapInfo | null): boolean {
-  if (slot.type === 'closed') return false;
+  if (slot.type !== 'open') return false;
   if (mapInfo && mapInfo.fixedPlayerSettings) {
     const mapSlot = mapInfo.players.find(p => p.id === slot.index);
     if (mapSlot && mapSlot.type === PlayerType.Computer) return false;
@@ -886,7 +885,7 @@ export function updateSlot(slotIndex: number, fields: SlotUpdate): void {
  *  invalid values fall through unchanged. Validates:
  *   - race/team locked when mapInfo.fixedPlayerSettings === true
  *   - color must not collide with another slot's color
- *   - slotType=closed kicks any current occupant first
+ *   - non-open slotType kicks any current occupant first
  *   - slotType only set when host calls (joiner path strips it) */
 function applySlotUpdate(slotIndex: number, fields: SlotUpdate): void {
   if (!state.isHost) return;
@@ -905,10 +904,10 @@ function applySlotUpdate(slotIndex: number, fields: SlotUpdate): void {
     }
   }
 
-  // Closing an occupied slot kicks the occupant first. Don't bother
+  // Closing or turning into AI kicks the occupant first. Don't bother
   // with confirm here — the UI is responsible for that.
-  if (fields.slotType === 'closed' && target.occupant) {
-    const kickMsg: KickedMsg = { type: 'kicked', reason: 'host closed your slot' };
+  if (fields.slotType !== undefined && fields.slotType !== 'open' && target.occupant) {
+    const kickMsg: KickedMsg = { type: 'kicked', reason: 'host changed your slot' };
     pokiBridgeSendStringTo(target.occupant, 'reliable', JSON.stringify(kickMsg));
   }
 
@@ -932,12 +931,12 @@ function applySlotUpdate(slotIndex: number, fields: SlotUpdate): void {
       next.handicap = fields.handicap;
       changed = true;
     }
-    if (fields.slotType !== undefined && (fields.slotType === 'open' || fields.slotType === 'closed')) {
+    if (fields.slotType !== undefined && isValidSlotType(fields.slotType)) {
       next.type = fields.slotType;
-      // If we just closed an occupied slot, the kick message above
+      // If we just made an occupied slot non-open, the kick message above
       // tells the peer to leave; clear the occupant locally now so
       // the broadcast reflects reality immediately.
-      if (fields.slotType === 'closed') next.occupant = null;
+      if (fields.slotType !== 'open') next.occupant = null;
       changed = true;
     }
     return next;
@@ -948,6 +947,14 @@ function applySlotUpdate(slotIndex: number, fields: SlotUpdate): void {
 }
 
 // ---- Slot helpers ----------------------------------------------------
+
+function isValidSlotType(value: string): value is LobbySlotType {
+  return value === 'open'
+    || value === 'closed'
+    || value === 'computer-newbie'
+    || value === 'computer-normal'
+    || value === 'computer-insane';
+}
 
 function slotsWithOccupant(slots: LobbySlot[], slotIndex: number, peerId: string): LobbySlot[] {
   const next = slots.slice();
@@ -988,10 +995,10 @@ function assignToFirstOpenSlot(slots: LobbySlot[], peerId: string, mapInfo: MapI
 /** Host-only: start the game. Reads the slot table to assign each
  *  peer their actual slot index, sends 'start-as-joiner' to every
  *  peer with a unique session token + the full slot config table,
- *  and resolves with the host's own start payload. Closed slots are
- *  flagged so the engine doesn't AI-fill them; empty open slots fall
- *  through to the engine's AI-filler fallback so melee games don't
- *  end at t=0. */
+ *  and resolves with the host's own start payload. Closed slots stay
+ *  empty, explicit computer slots keep their selected difficulty, and
+ *  empty open slots fall through to the engine's AI-filler fallback so
+ *  melee games don't end at t=0. */
 export function startGame(): {
   selfId: string;
   mapPath: string;
@@ -1092,7 +1099,7 @@ export interface StartPayload {
    *  match what the host picked in the lobby. Strings throughout to
    *  keep the postMessage transit format uniform. */
   slotConfigIndexes:   string[];
-  slotConfigTypes:     string[];  // 'open' | 'closed'
+  slotConfigTypes:     string[];  // LobbySlotType
   slotConfigRaces:     string[];  // PlayerRace ids
   slotConfigColors:    string[];  // 0..11
   slotConfigTeams:     string[];  // force index, -1 for none

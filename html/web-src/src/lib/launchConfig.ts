@@ -3,7 +3,7 @@ export type MultiplayerRole = 'host' | 'client';
 
 export interface LaunchSlotConfig {
   index: number;
-  type?: 'open' | 'closed';
+  type?: 'open' | 'closed' | 'computer-newbie' | 'computer-normal' | 'computer-insane';
   race?: number;
   color?: number;
   team?: number;

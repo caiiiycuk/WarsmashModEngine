@@ -234,9 +234,7 @@ public final class WebMultiplayerCoordinator {
 			final int slotIdx = parseInt(idxArr.get(i));
 			if (typeArr != null && i < typeArr.getLength()) {
 				final String t = jsStrOrEmpty(typeArr.get(i));
-				types.put(slotIdx, "closed".equals(t)
-						? MultiplayerLobbyConfig.SLOT_TYPE_CLOSED
-						: MultiplayerLobbyConfig.SLOT_TYPE_OPEN);
+				types.put(slotIdx, parseSlotType(t));
 			}
 			if (raceArr  != null && i < raceArr.getLength())  races.put(slotIdx, parseInt(raceArr.get(i)));
 			if (colorArr != null && i < colorArr.getLength()) colors.put(slotIdx, parseInt(colorArr.get(i)));
@@ -244,6 +242,22 @@ public final class WebMultiplayerCoordinator {
 			if (handArr  != null && i < handArr.getLength())  handicaps.put(slotIdx, parseInt(handArr.get(i)));
 		}
 		return new MultiplayerLobbyConfig(types, races, colors, teams, handicaps, fps);
+	}
+
+	private static int parseSlotType(final String type) {
+		if ("closed".equals(type)) {
+			return MultiplayerLobbyConfig.SLOT_TYPE_CLOSED;
+		}
+		if ("computer-newbie".equals(type)) {
+			return MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_NEWBIE;
+		}
+		if ("computer-normal".equals(type)) {
+			return MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_NORMAL;
+		}
+		if ("computer-insane".equals(type)) {
+			return MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_INSANE;
+		}
+		return MultiplayerLobbyConfig.SLOT_TYPE_OPEN;
 	}
 
 	private MenuUI currentMenuUI() {

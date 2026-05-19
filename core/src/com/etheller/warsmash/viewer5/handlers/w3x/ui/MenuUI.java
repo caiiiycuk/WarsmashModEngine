@@ -2841,7 +2841,7 @@ public class MenuUI {
 				// the engine never spawns starting units even though the
 				// turn-tick loop is running.
 				//
-				// On top of that, apply per-slot race/color/team/closed
+				// On top of that, apply per-slot type/race/color/team
 				// from the lobbyConfig (when present) so the in-game
 				// roster matches what the host picked in the lobby UI.
 				final java.util.Set<Integer> humanSlots = new java.util.HashSet<>();
@@ -2871,9 +2871,26 @@ public class MenuUI {
 								MenuUI.this.currentMapConfig.getPlayer(i);
 						final com.etheller.warsmash.viewer5.handlers.w3x.simulation.players.CMapControl ctrl =
 								player.getController();
-						final boolean isClosed = cfg.getSlotTypes().get(i, com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_OPEN)
-								== com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_CLOSED;
-						if (isClosed && !humanSlots.contains(i)) {
+						final int slotType = cfg.getSlotTypes().get(i,
+								com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_OPEN);
+						if ((slotType == com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_NEWBIE
+								|| slotType == com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_NORMAL
+								|| slotType == com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_INSANE)
+								&& !humanSlots.contains(i)) {
+							player.setController(com.etheller.warsmash.viewer5.handlers.w3x.simulation.players.CMapControl.COMPUTER);
+							player.setSlotState(com.etheller.warsmash.viewer5.handlers.w3x.simulation.trigger.enumtypes.CPlayerSlotState.PLAYING);
+							if (slotType == com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_NEWBIE) {
+								player.setAIDifficulty(com.etheller.warsmash.viewer5.handlers.w3x.simulation.ai.AIDifficulty.NEWBIE);
+							}
+							else if (slotType == com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_COMPUTER_INSANE) {
+								player.setAIDifficulty(com.etheller.warsmash.viewer5.handlers.w3x.simulation.ai.AIDifficulty.INSANE);
+							}
+							else {
+								player.setAIDifficulty(com.etheller.warsmash.viewer5.handlers.w3x.simulation.ai.AIDifficulty.NORMAL);
+							}
+						}
+						else if ((slotType == com.etheller.warsmash.networking.MultiplayerLobbyConfig.SLOT_TYPE_CLOSED)
+								&& !humanSlots.contains(i)) {
 							// Host explicitly closed this slot — keep it
 							// out of play. Don't AI-fill, don't activate.
 							player.setSlotState(com.etheller.warsmash.viewer5.handlers.w3x.simulation.trigger.enumtypes.CPlayerSlotState.EMPTY);
@@ -2924,9 +2941,8 @@ public class MenuUI {
 						if (wantColor >= 0) player.setColor(wantColor);
 						final int wantTeam = cfg.getSlotTeams().get(i, -1);
 						if (wantTeam >= 0) player.setTeam(wantTeam);
-						// Handicap intentionally not applied — CBasePlayer
-						// doesn't expose a setter today; engine treats all
-						// slots as 100% until that lands.
+						final int wantHandicap = cfg.getSlotHandicaps().get(i, -1);
+						if (wantHandicap >= 0) player.setHandicap(wantHandicap / 100.0f);
 					}
 				}
 

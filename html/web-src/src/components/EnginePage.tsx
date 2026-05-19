@@ -20,6 +20,7 @@ import {
   startGame,
   subscribeLobbyState,
   updateSlot,
+  type LobbySlotType,
   type LobbyState,
   type StartPayload,
 } from '../lib/lobbyClient';
@@ -27,7 +28,7 @@ import { PlayerRace, raceLabel } from '../lib/mapInfo';
 import type { LaunchConfig } from '../lib/launchConfig';
 import { createMultiplayerTransport, type MultiplayerTransport } from '../lib/multiplayerTransport';
 import { clearOpfs, hasW3Root, installEngineWorkerGlobals, listAllMaps } from '../lib/opfs';
-import { PLAYER_COLORS } from '../lib/playerColors';
+import { HANDICAP_VALUES, PLAYER_COLORS, colorById } from '../lib/playerColors';
 import { acquireWakeLock, installWakeLockReacquire } from '../lib/wakeLock';
 import DesyncOverlay, { type DesyncReportPayload } from './DesyncOverlay';
 
@@ -441,6 +442,7 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
   const mapLabel = lobby.mapInfo?.name || lobby.selectedMap;
   const selfSlot = lobby.slots.find((slot) => slot.occupant === lobby.selfId) ?? null;
   const racesLocked = lobby.mapInfo?.fixedPlayerSettings ?? false;
+  const hasTeams = lobby.mapInfo?.useCustomForces === true && (lobby.mapInfo?.forces.length ?? 0) > 0;
   const occupiedCount = lobby.slots.filter((slot) => slot.occupant !== null).length;
   const peerCount = occupiedCount - (lobby.isHost ? 1 : 0);
   const canStart = lobby.isHost && peerCount >= 1;
@@ -467,56 +469,64 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
             const occupant = lobby.players.find((p) => p.peerId === slot.occupant);
             const isSelf = slot.occupant === lobby.selfId;
             const canClaim = slot.occupant === null && isSlotJoinable(slot, lobby.mapInfo);
+            const color = colorById(slot.color);
             return (
               <li key={slot.index}>
-                <span>
-                  Slot {slot.index + 1}: {occupant?.name ?? slot.type}
+                <span class="room-slot-summary">
+                  <span class="room-slot-title">Slot {slot.index + 1}: {occupant?.name ?? slotTypeLabel(slot.type)}</span>
                   {isSelf ? ' (you)' : ''}
+                  <span class="room-slot-meta">
+                    {raceLabel(slot.race)}
+                    <span class="room-color-chip" style={{ backgroundColor: color.hex }} />
+                    {color.name}
+                    {hasTeams ? `, ${teamLabel(lobby, slot.team)}` : ''}
+                    {`, ${slot.handicap}%`}
+                  </span>
                 </span>
-                {canClaim && (
-                  <button class="secondary room-slot-claim" onClick={() => requestSlot(slot.index)}>
-                    Choose
-                  </button>
+                <div class="room-slot-actions">
+                  {lobby.isHost && (
+                    <select
+                      class="room-slot-type-select"
+                      value={slot.type}
+                      onChange={(e) => updateSlot(slot.index, {
+                        slotType: (e.currentTarget as HTMLSelectElement).value as LobbySlotType,
+                      })}
+                    >
+                      <option value="open">Open</option>
+                      <option value="closed">Closed</option>
+                      <option value="computer-newbie">Computer (Easy)</option>
+                      <option value="computer-normal">Computer (Normal)</option>
+                      <option value="computer-insane">Computer (Insane)</option>
+                    </select>
+                  )}
+                  {canClaim && (
+                    <button class="secondary room-slot-claim" onClick={() => requestSlot(slot.index)}>
+                      Choose
+                    </button>
+                  )}
+                </div>
+                {lobby.isHost && (
+                  <SlotConfigControls
+                    lobby={lobby}
+                    slot={slot}
+                    racesLocked={racesLocked}
+                    hasTeams={hasTeams}
+                  />
                 )}
               </li>
             );
           })}
         </ul>
 
-        {selfSlot && (
+        {selfSlot && !lobby.isHost && (
           <div class="room-self-config">
             <h2>Your side</h2>
-            <label>
-              Race
-              <select
-                value={selfSlot.race}
-                disabled={racesLocked}
-                onChange={(e) => updateSlot(selfSlot.index, {
-                  race: Number((e.currentTarget as HTMLSelectElement).value) as PlayerRace,
-                })}
-              >
-                {[
-                  PlayerRace.Selectable,
-                  PlayerRace.Human,
-                  PlayerRace.Orc,
-                  PlayerRace.Undead,
-                  PlayerRace.NightElf,
-                ].map((race) => <option value={race}>{raceLabel(race)}</option>)}
-              </select>
-            </label>
-            <label>
-              Color
-              <select
-                value={selfSlot.color}
-                onChange={(e) => updateSlot(selfSlot.index, {
-                  color: Number((e.currentTarget as HTMLSelectElement).value),
-                })}
-              >
-                {PLAYER_COLORS.map((color) => (
-                  <option value={color.id}>{color.name}</option>
-                ))}
-              </select>
-            </label>
+            <SlotConfigControls
+              lobby={lobby}
+              slot={selfSlot}
+              racesLocked={racesLocked}
+              hasTeams={hasTeams}
+            />
           </div>
         )}
 
@@ -528,6 +538,100 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
       </div>
     </div>
   );
+}
+
+function SlotConfigControls({
+  lobby,
+  slot,
+  racesLocked,
+  hasTeams,
+}: {
+  lobby: LobbyState;
+  slot: LobbyState['slots'][number];
+  racesLocked: boolean;
+  hasTeams: boolean;
+}) {
+  return (
+    <div class="room-slot-config">
+      <label>
+        Race
+        <select
+          value={slot.race}
+          disabled={racesLocked}
+          onChange={(e) => updateSlot(slot.index, {
+            race: Number((e.currentTarget as HTMLSelectElement).value) as PlayerRace,
+          })}
+        >
+          {[
+            PlayerRace.Selectable,
+            PlayerRace.Human,
+            PlayerRace.Orc,
+            PlayerRace.Undead,
+            PlayerRace.NightElf,
+          ].map((race) => <option key={race} value={race}>{raceLabel(race)}</option>)}
+        </select>
+      </label>
+      <label>
+        Color
+        <select
+          value={slot.color}
+          onChange={(e) => updateSlot(slot.index, {
+            color: Number((e.currentTarget as HTMLSelectElement).value),
+          })}
+        >
+          {PLAYER_COLORS.map((color) => (
+            <option key={color.id} value={color.id}>{color.name}</option>
+          ))}
+        </select>
+      </label>
+      {hasTeams && (
+        <label>
+          Team
+          <select
+            value={slot.team}
+            disabled={racesLocked}
+            onChange={(e) => updateSlot(slot.index, {
+              team: Number((e.currentTarget as HTMLSelectElement).value),
+            })}
+          >
+            <option value={-1}>None</option>
+            {lobby.mapInfo?.forces.map((force, index) => (
+              <option key={index} value={index}>{force.name || `Team ${index + 1}`}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        Handicap
+        <select
+          value={slot.handicap}
+          onChange={(e) => updateSlot(slot.index, {
+            handicap: Number((e.currentTarget as HTMLSelectElement).value),
+          })}
+        >
+          {HANDICAP_VALUES.map((value) => (
+            <option key={value} value={value}>{value}%</option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function teamLabel(lobby: LobbyState, team: number): string {
+  if (team < 0) return 'No team';
+  return lobby.mapInfo?.forces[team]?.name || `Team ${team + 1}`;
+}
+
+function slotTypeLabel(type: LobbySlotType): string {
+  switch (type) {
+  case 'closed': return 'Closed';
+  case 'computer-newbie': return 'Computer (Easy)';
+  case 'computer-normal': return 'Computer (Normal)';
+  case 'computer-insane': return 'Computer (Insane)';
+  case 'open':
+  default: return 'Open';
+  }
 }
 
 /** One-time legacy cleanup: the presence of OPFS /extracted/ marks an

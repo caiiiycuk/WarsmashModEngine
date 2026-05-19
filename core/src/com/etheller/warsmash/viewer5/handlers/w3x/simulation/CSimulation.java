@@ -196,6 +196,7 @@ public class CSimulation implements CPlayerAPI, CFogMaskSettings {
 			final CPlayer newPlayer = new CPlayer(defaultRace, new float[] { startLoc.getX(), startLoc.getY() },
 					configPlayer, new CPlayerFogOfWar(pathingGrid));
 			newPlayer.setAIDifficulty(configPlayer.getAIDifficulty());
+			newPlayer.setHandicap(configPlayer.getHandicap());
 			this.players.add(newPlayer);
 			this.defaultPlayerUnitOrderExecutors.add(new CPlayerUnitOrderExecutor(this, i));
 			if ((newPlayer.getController() == CMapControl.NEUTRAL) && (i < (WarsmashConstants.MAX_PLAYERS - 4))) {

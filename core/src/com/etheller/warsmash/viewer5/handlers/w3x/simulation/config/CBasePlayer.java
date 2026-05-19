@@ -28,6 +28,7 @@ public abstract class CBasePlayer implements CPlayerJass {
 	private CMapControl mapControl = CMapControl.NONE;
 	private CPlayerSlotState slotState = CPlayerSlotState.EMPTY;
 	private AIDifficulty aiDifficulty = null;
+	private float handicap = 1.0f;
 
 	public CBasePlayer(final CBasePlayer other) {
 		this.id = other.id;
@@ -43,6 +44,7 @@ public abstract class CBasePlayer implements CPlayerJass {
 		this.raceSelectable = other.raceSelectable;
 		this.mapControl = other.mapControl;
 		this.slotState = other.slotState;
+		this.handicap = other.handicap;
 	}
 
 	public CBasePlayer(final int id) {
@@ -121,6 +123,14 @@ public abstract class CBasePlayer implements CPlayerJass {
 	@Override
 	public int getColor() {
 		return this.color;
+	}
+
+	public void setHandicap(final float handicap) {
+		this.handicap = handicap;
+	}
+
+	public float getHandicap() {
+		return this.handicap;
 	}
 
 	@Override

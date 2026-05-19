@@ -16,7 +16,8 @@ import com.badlogic.gdx.utils.IntIntMap;
  *
  * <p>All maps are 0-based slot id → value:
  * <ul>
- *   <li>{@code slotTypes}: 0 = open, 1 = closed</li>
+ *   <li>{@code slotTypes}: 0 = open, 1 = closed,
+ *       2/3/4 = computer newbie/normal/insane</li>
  *   <li>{@code slotRaces}: matches {@code CRaceManager} race ids
  *       (0 = random, 1 = human, 2 = orc, 3 = undead, 4 = nightelf)</li>
  *   <li>{@code slotColors}: 0..11 (the standard WC3 player color id)</li>
@@ -32,6 +33,9 @@ import com.badlogic.gdx.utils.IntIntMap;
 public final class MultiplayerLobbyConfig {
 	public static final int SLOT_TYPE_OPEN   = 0;
 	public static final int SLOT_TYPE_CLOSED = 1;
+	public static final int SLOT_TYPE_COMPUTER_NEWBIE = 2;
+	public static final int SLOT_TYPE_COMPUTER_NORMAL = 3;
+	public static final int SLOT_TYPE_COMPUTER_INSANE = 4;
 
 	private final IntIntMap slotTypes;
 	private final IntIntMap slotRaces;
