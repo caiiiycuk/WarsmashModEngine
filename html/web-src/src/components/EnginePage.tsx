@@ -451,15 +451,29 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
         <p><strong>Room:</strong> {lobby.lobbyCode || 'connecting…'}</p>
         <p><strong>Map:</strong> {mapLabel}</p>
 
-        <h2>Players</h2>
-        <ul class="room-player-list">
-          {lobby.players.map((player) => (
-            <li key={player.peerId}>
-              {player.name}
-              {player.peerId === lobby.leaderId ? ' (host)' : ''}
-            </li>
-          ))}
-        </ul>
+        {false && <>
+          <h2>Players</h2>
+          <ul class="room-player-list">
+            {lobby.players.map((player) => (
+              <li key={player.peerId}>
+                {player.name}
+                {player.peerId === lobby.leaderId ? ' (host)' : ''}
+              </li>
+            ))}
+          </ul>
+        </>}
+
+        {selfSlot && !lobby.isHost && (
+          <div class="room-self-config">
+            <h2>Your side</h2>
+            <SlotConfigControls
+              lobby={lobby}
+              slot={selfSlot}
+              racesLocked={racesLocked}
+              hasTeams={hasTeams}
+            />
+          </div>
+        )}
 
         <h2>Slots</h2>
         <ul class="room-slot-list">
@@ -512,18 +526,6 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
             );
           })}
         </ul>
-
-        {selfSlot && !lobby.isHost && (
-          <div class="room-self-config">
-            <h2>Your side</h2>
-            <SlotConfigControls
-              lobby={lobby}
-              slot={selfSlot}
-              racesLocked={racesLocked}
-              hasTeams={hasTeams}
-            />
-          </div>
-        )}
 
         {lobby.lastError && <p class="error">{lobby.lastError}</p>}
 
