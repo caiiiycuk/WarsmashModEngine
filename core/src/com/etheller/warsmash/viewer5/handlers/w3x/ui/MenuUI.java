@@ -2848,6 +2848,19 @@ public class MenuUI {
 				for (final com.badlogic.gdx.utils.IntIntMap.Entry e : serverSlotToMapSlot) {
 					if (e.value >= 0) humanSlots.add(e.value);
 				}
+				int resolvedLocalPlayerIndex = serverSlotToMapSlot.get(localPlayerSlot, -1);
+				if ((resolvedLocalPlayerIndex < 0) && (localPlayerSlot >= 0)
+						&& (localPlayerSlot < com.etheller.warsmash.util.WarsmashConstants.MAX_PLAYERS)) {
+					resolvedLocalPlayerIndex = localPlayerSlot;
+					humanSlots.add(localPlayerSlot);
+					serverSlotToMapSlot.put(localPlayerSlot, localPlayerSlot);
+					mapSlotToServerSlot.put(localPlayerSlot, localPlayerSlot);
+					System.err.println("startMultiplayerGameDirect: repaired missing local slot mapping for slot "
+							+ localPlayerSlot);
+				}
+				if (humanSlots.isEmpty() && (resolvedLocalPlayerIndex >= 0)) {
+					humanSlots.add(resolvedLocalPlayerIndex);
+				}
 				if (MenuUI.this.currentMapConfig != null) {
 					boolean foundFirstComp = false;
 					final com.etheller.warsmash.networking.MultiplayerLobbyConfig cfg =
@@ -2925,7 +2938,7 @@ public class MenuUI {
 				MenuUI.this.beginGameInformation.hostUdpPort = hostUdpPort & 0xFFFF;
 				MenuUI.this.beginGameInformation.serverSlotToMapSlot = serverSlotToMapSlot;
 				MenuUI.this.beginGameInformation.mapSlotToServerSlot = mapSlotToServerSlot;
-				MenuUI.this.beginGameInformation.localPlayerIndex = serverSlotToMapSlot.get(localPlayerSlot, -1);
+				MenuUI.this.beginGameInformation.localPlayerIndex = resolvedLocalPlayerIndex;
 				MenuUI.this.menuState = MenuState.GOING_TO_MAP;
 			}
 		});

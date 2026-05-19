@@ -1022,13 +1022,19 @@ export function startGame(): {
 
   for (const slot of state.slots) {
     if (slot.occupant === null || slot.occupant === state.selfId) continue;
-    const token = newSessionToken();
-    sessionTokenToSlot[String(token)] = slot.index;
+    sessionTokenToSlot[String(newSessionToken())] = slot.index;
+  }
+
+  for (const slot of state.slots) {
+    if (slot.occupant === null || slot.occupant === state.selfId) continue;
+    const token = Object.keys(sessionTokenToSlot)
+      .find((t) => sessionTokenToSlot[t] === slot.index);
+    if (!token) continue;
     const msg: StartGameMsg = {
       type: 'start-as-joiner',
       mapPath: state.selectedMap,
       hostPeerId: state.selfId,
-      mySessionToken: String(token),
+      mySessionToken: token,
       mySlot: String(slot.index),
       sessionTokenToSlot,
       slotConfigs,

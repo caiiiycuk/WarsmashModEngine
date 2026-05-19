@@ -14,7 +14,6 @@ import {
 } from '../lib/assetStaging';
 import { bootEngineWorker, type EngineHandle } from '../lib/engineBoot';
 import {
-  buildHostStartPayload,
   getLobbyState,
   isSlotJoinable,
   requestSlot,
@@ -372,17 +371,8 @@ export default function EnginePage({
   function startHostedMatch() {
     const started = startGame();
     if (!started) return;
-    console.log('[EnginePage] host Start clicked; building local host payload.');
-    queuedMpStart.current = buildHostStartPayload(
-      started.mapPath,
-      started.selfId,
-      started.hostToken,
-      started.sessionTokens,
-      started.slotConfigs,
-      started.hostSlot,
-    );
+    console.log('[EnginePage] host Start clicked.');
     setMultiplayerLobbyVisible(false);
-    sendQueuedMultiplayerStart();
   }
 
   const showOverlay = boot !== 'running';
@@ -451,6 +441,9 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
   const mapLabel = lobby.mapInfo?.name || lobby.selectedMap;
   const selfSlot = lobby.slots.find((slot) => slot.occupant === lobby.selfId) ?? null;
   const racesLocked = lobby.mapInfo?.fixedPlayerSettings ?? false;
+  const occupiedCount = lobby.slots.filter((slot) => slot.occupant !== null).length;
+  const peerCount = occupiedCount - (lobby.isHost ? 1 : 0);
+  const canStart = lobby.isHost && peerCount >= 1;
   return (
     <div class="boot-overlay multiplayer-room-overlay">
       <div class="boot-overlay-card">
@@ -530,7 +523,7 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
         {lobby.lastError && <p class="error">{lobby.lastError}</p>}
 
         {lobby.isHost
-          ? <button class="primary" disabled={!lobby.lobbyCode} onClick={onStart}>Start</button>
+          ? <button class="primary" disabled={!lobby.lobbyCode || !canStart} onClick={onStart}>Start</button>
           : <p>Waiting for host to start the match…</p>}
       </div>
     </div>

@@ -116,25 +116,27 @@ final class WorkerInput extends AbstractInput {
 
 	private void dispatchKey(final KeyEvent e) {
 		final int keycode = e.keycode;
+		if ((keycode < 0) || (keycode > com.badlogic.gdx.Input.Keys.MAX_KEYCODE)) {
+			if (e.ch != 0 && "down".equals(e.name) && this.processor != null) {
+				this.processor.keyTyped(e.ch);
+			}
+			return;
+		}
 		switch (e.name) {
 		case "down":
-			if (keycode >= 0 && keycode <= com.badlogic.gdx.Input.Keys.MAX_KEYCODE) {
-				if (!this.pressedKeys[keycode]) {
-					this.pressedKeys[keycode] = true;
-					this.justPressedKeys[keycode] = true;
-					this.pressedKeyCount++;
-					this.keyJustPressed = true;
-				}
+			if (!this.pressedKeys[keycode]) {
+				this.pressedKeys[keycode] = true;
+				this.justPressedKeys[keycode] = true;
+				this.pressedKeyCount++;
+				this.keyJustPressed = true;
 			}
 			if (this.processor != null) this.processor.keyDown(keycode);
 			if (e.ch != 0 && this.processor != null) this.processor.keyTyped(e.ch);
 			break;
 		case "up":
-			if (keycode >= 0 && keycode <= com.badlogic.gdx.Input.Keys.MAX_KEYCODE) {
-				if (this.pressedKeys[keycode]) {
-					this.pressedKeys[keycode] = false;
-					this.pressedKeyCount = Math.max(0, this.pressedKeyCount - 1);
-				}
+			if (this.pressedKeys[keycode]) {
+				this.pressedKeys[keycode] = false;
+				this.pressedKeyCount = Math.max(0, this.pressedKeyCount - 1);
 			}
 			if (this.processor != null) this.processor.keyUp(keycode);
 			break;

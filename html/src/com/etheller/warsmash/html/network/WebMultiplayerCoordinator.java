@@ -111,14 +111,21 @@ public final class WebMultiplayerCoordinator {
 		}
 
 		// sessionTokenToSlot rebuilt from the parallel arrays the main
-		// thread sent us. Used by WarsmashServer to validate per-message
-		// session tokens.
+		// thread sent us. JS sends map slot ids; the simulation network
+		// protocol uses compact server slots, then maps server slot -> map slot
+		// just like the legacy BattleNet path.
 		final java.util.Map<Long, Integer> sessionTokenToSlot = new java.util.HashMap<>();
+		final IntIntMap serverSlotToMapSlot = new IntIntMap();
+		final IntIntMap mapSlotToServerSlot = new IntIntMap();
 		final JSArray<JSString> tokenStrs = params.getSessionTokens();
 		final JSArray<JSString> slotStrs = params.getSlots();
 		final int n = tokenStrs.getLength();
 		for (int i = 0; i < n; i++) {
-			sessionTokenToSlot.put(parseLong(tokenStrs.get(i)), parseInt(slotStrs.get(i)));
+			final int mapSlot = parseInt(slotStrs.get(i));
+			final int serverSlot = i;
+			sessionTokenToSlot.put(parseLong(tokenStrs.get(i)), serverSlot);
+			serverSlotToMapSlot.put(serverSlot, mapSlot);
+			mapSlotToServerSlot.put(mapSlot, serverSlot);
 		}
 
 		final WarsmashServerParser serverParser = new WarsmashServerParser();
@@ -148,25 +155,19 @@ public final class WebMultiplayerCoordinator {
 		// later NetworkPlatform.startNetworkGameClient invocation.
 		pendingHostStart = new PendingHostStart(loopback, hostClientParser);
 
-		// Build engine-side IntIntMaps. Identity slot mapping for now.
-		final IntIntMap serverSlotToMapSlot = new IntIntMap();
-		final IntIntMap mapSlotToServerSlot = new IntIntMap();
-		for (final Integer slot : sessionTokenToSlot.values()) {
-			serverSlotToMapSlot.put(slot, slot);
-			mapSlotToServerSlot.put(slot, slot);
-		}
-
 		final MenuUI menuUI = currentMenuUI();
 		if (menuUI == null) {
 			System.err.println("startAsHost: MenuUI not reachable; is the menu screen active?");
 			return;
 		}
+		final int localMapSlot = parseInt(params.getMySlot());
+		final int localServerSlot = mapSlotToServerSlot.get(localMapSlot, localMapSlot);
 		menuUI.startMultiplayerGameDirect(
 				params.getMapPathOrEmpty(),
 				parseLong(params.getMySessionToken()),
 				WebGameClientStarter.encodePeerId(selfId),
 				0,                          // unused on web
-				parseInt(params.getMySlot()),
+				localServerSlot,
 				serverSlotToMapSlot,
 				mapSlotToServerSlot,
 				lobbyConfigFromParams(params));
@@ -183,9 +184,10 @@ public final class WebMultiplayerCoordinator {
 		final JSArray<JSString> slotStrs = params.getSlots();
 		final int n = slotStrs.getLength();
 		for (int i = 0; i < n; i++) {
-			final int slot = parseInt(slotStrs.get(i));
-			serverSlotToMapSlot.put(slot, slot);
-			mapSlotToServerSlot.put(slot, slot);
+			final int mapSlot = parseInt(slotStrs.get(i));
+			final int serverSlot = i;
+			serverSlotToMapSlot.put(serverSlot, mapSlot);
+			mapSlotToServerSlot.put(mapSlot, serverSlot);
 		}
 
 		final MenuUI menuUI = currentMenuUI();
@@ -193,12 +195,14 @@ public final class WebMultiplayerCoordinator {
 			System.err.println("startAsJoiner: MenuUI not reachable");
 			return;
 		}
+		final int localMapSlot = parseInt(params.getMySlot());
+		final int localServerSlot = mapSlotToServerSlot.get(localMapSlot, localMapSlot);
 		menuUI.startMultiplayerGameDirect(
 				params.getMapPathOrEmpty(),
 				parseLong(params.getMySessionToken()),
 				WebGameClientStarter.encodePeerId(params.getHostPeerIdOrEmpty()),
 				0,
-				parseInt(params.getMySlot()),
+				localServerSlot,
 				serverSlotToMapSlot,
 				mapSlotToServerSlot,
 				lobbyConfigFromParams(params));
