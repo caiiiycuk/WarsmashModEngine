@@ -444,6 +444,16 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
   const racesLocked = lobby.mapInfo?.fixedPlayerSettings ?? false;
   const hasTeams = lobby.mapInfo?.useCustomForces === true && (lobby.mapInfo?.forces.length ?? 0) > 0;
   const canStart = lobby.isHost && selfSlot !== null;
+  if (lobby.matchStarted) {
+    return (
+      <div class="boot-overlay multiplayer-room-overlay">
+        <div class="boot-overlay-card">
+          <h1>Match already started...</h1>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div class="boot-overlay multiplayer-room-overlay">
       <div class="boot-overlay-card">
@@ -480,7 +490,7 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
           {lobby.slots.map((slot) => {
             const occupant = lobby.players.find((p) => p.peerId === slot.occupant);
             const isSelf = slot.occupant === lobby.selfId;
-            const canClaim = slot.occupant === null && isSlotJoinable(slot, lobby.mapInfo);
+            const canClaim = !lobby.matchStarted && slot.occupant === null && isSlotJoinable(slot, lobby.mapInfo);
             const color = colorById(slot.color);
             return (
               <li key={slot.index}>
@@ -514,7 +524,7 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
                     </button>
                   )}
                 </div>
-                {lobby.isHost && (
+                {lobby.isHost && slot.occupant === lobby.selfId && (
                   <SlotConfigControls
                     lobby={lobby}
                     slot={slot}
@@ -531,7 +541,9 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
 
         {lobby.isHost
           ? <button class="primary" disabled={!lobby.lobbyCode || !canStart} onClick={onStart}>Start</button>
-          : <p>Waiting for host to start the match…</p>}
+          : lobby.matchStarted
+            ? <p class="room-match-started">The match has already started.</p>
+            : <p>Waiting for host to start the match…</p>}
       </div>
     </div>
   );

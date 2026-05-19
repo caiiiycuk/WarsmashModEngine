@@ -137,6 +137,10 @@ export interface LobbyState {
   /** True iff the bridge had an init failure (netlib library missing,
    *  WebRTC unavailable, etc.). */
   bridgeFailed: boolean;
+  /** Host-authoritative flag set after Start. Late joiners can still
+   *  connect to the room alias, but they cannot enter an already
+   *  running lockstep match. */
+  matchStarted: boolean;
 }
 
 // ---- Module-level state + subscription primitives ---------------------
@@ -158,6 +162,7 @@ let state: LobbyState = {
   mapInfo: null,
   lastError: '',
   bridgeFailed: false,
+  matchStarted: false,
 };
 
 /** Synthetic slot table for when we haven't parsed mapInfo yet —
@@ -364,6 +369,7 @@ function ensureBridgeInit(): void {
         isHost: isCreator,
         players,
         slots: seededSlots,
+        matchStarted: false,
         lastError: '',
       });
       postToWorker({ kind: 'mp-lobby', code });
@@ -378,6 +384,7 @@ function ensureBridgeInit(): void {
         players: [],
         slots: emptySlots(state.maxPlayers),
         mapInfo: null,
+        matchStarted: false,
       });
       postToWorker({ kind: 'mp-left' });
     },
@@ -391,7 +398,7 @@ function ensureBridgeInit(): void {
       // (joiners wait for the host's broadcast — they don't manage
       // slots). Computer-typed slots in fixed-settings maps are
       // skipped because the map declared them as predetermined AI.
-      if (state.isHost) {
+      if (state.isHost && !state.matchStarted) {
         const updated = assignToFirstOpenSlot(state.slots, peerId, state.mapInfo);
         if (updated !== state.slots) {
           setState({ slots: updated });
@@ -486,7 +493,13 @@ function installCleanupHandlers(): void {
 interface HelloMsg       { type: 'hello'; }
 interface IntroduceMsg   { type: 'introduce'; name: string; }
 interface LeavingMsg     { type: 'leaving'; }
-interface LobbyStateMsg  { type: 'lobby-state'; mapPath: string; maxPlayers: number; slots: LobbySlot[]; }
+interface LobbyStateMsg  {
+  type: 'lobby-state';
+  mapPath: string;
+  maxPlayers: number;
+  slots: LobbySlot[];
+  matchStarted?: boolean;
+}
 interface ClaimSlotMsg   { type: 'claim-slot'; slotIndex: number; }
 /** Snapshot of every slot's config the host ships to joiners as part
  *  of `start-as-joiner` so the engine on each peer can apply the
@@ -576,6 +589,7 @@ function broadcastLobbyState(): void {
     mapPath: state.selectedMap,
     maxPlayers: state.maxPlayers,
     slots: state.slots,
+    matchStarted: state.matchStarted,
   };
   pokiBridgeBroadcastString('reliable', JSON.stringify(msg));
 }
@@ -589,6 +603,7 @@ function sendLobbyStateTo(peerId: string): void {
     mapPath: state.selectedMap,
     maxPlayers: state.maxPlayers,
     slots: state.slots,
+    matchStarted: state.matchStarted,
   };
   pokiBridgeSendStringTo(peerId, 'reliable', JSON.stringify(msg));
 }
@@ -645,6 +660,7 @@ function handleControlMessage(peerId: string, payload: string): void {
         selectedMap: incomingMapPath,
         maxPlayers: msg.maxPlayers,
         slots: msg.slots,
+        matchStarted: msg.matchStarted === true,
         // Drop stale mapInfo when the map path changes — the async
         // load below replaces it. Keeps state.mapInfo from pointing
         // at the previous map's data while the new parse is in flight.
@@ -674,7 +690,7 @@ function handleControlMessage(peerId: string, payload: string): void {
       // Host-side only: a joiner is asking to move into slotIndex.
       // We swap them in if the slot is open AND not closed; ignore
       // otherwise.
-      if (!state.isHost) return;
+      if (!state.isHost || state.matchStarted) return;
       const target = msg.slotIndex;
       const slots = state.slots;
       const targetPos = slots.findIndex(s => s.index === target);
@@ -694,7 +710,7 @@ function handleControlMessage(peerId: string, payload: string): void {
       // own slot's fields. Validate that they actually own the slot
       // they're targeting before applying. Strip slotType — that's
       // host-only.
-      if (!state.isHost) return;
+      if (!state.isHost || state.matchStarted) return;
       const slot = state.slots.find(s => s.index === msg.slotIndex);
       if (!slot || slot.occupant !== peerId) return;
       applySlotUpdate(msg.slotIndex, {
@@ -799,6 +815,7 @@ export async function createLobby(opts: CreateLobbyOptions): Promise<string> {
           maxPlayers: settings.maxPlayers,
           slots: initialSlots,
           mapInfo,
+          matchStarted: false,
           lastError: '',
         });
         resolve(code);
@@ -1018,6 +1035,7 @@ export function startGame(): {
   slotConfigs: SlotConfigEntry[];
 } | null {
   if (!state.isHost) return null;
+  setState({ matchStarted: true });
   const sessionTokenToSlot: Record<string, number> = {};
   const hostLobbySlot = state.slots.find(s => s.occupant === state.selfId);
   const hostSlot = hostLobbySlot?.index ?? 0;
