@@ -30,4 +30,10 @@ public class ClientToServerProtocol {
 	 * diffable in a single textarea).
 	 */
 	public static final int DESYNC_DUMP = 12;
+	/**
+	 * Chunked variant of {@link #DESYNC_DUMP}. WebRTCNet's datagram path can
+	 * truncate payloads around MTU size, so large diagnostic dumps are split into
+	 * small application-level chunks and reassembled by the server parser.
+	 */
+	public static final int DESYNC_DUMP_CHUNK = 13;
 }

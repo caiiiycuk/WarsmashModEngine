@@ -2,12 +2,17 @@ package com.etheller.warsmash.networking;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 
 import net.warsmash.networking.udp.OrderedUdpServerListener;
 
 public class WarsmashServerParser implements OrderedUdpServerListener {
+	private static final int MAX_DIAGNOSTIC_BYTES = 1024 * 1024;
 
 	private ClientToServerListener listener;
+	private final Map<DiagnosticChunkKey, DiagnosticChunkAssembly> desyncDumpChunks = new HashMap<>();
 
 	public WarsmashServerParser(final ClientToServerListener clientToServerListener) throws IOException {
 		this.listener = clientToServerListener;
@@ -142,8 +147,38 @@ public class WarsmashServerParser implements OrderedUdpServerListener {
 					final int dumpLen = buffer.getInt();
 					final byte[] dumpBytes = new byte[dumpLen];
 					buffer.get(dumpBytes);
-					final String dump = new String(dumpBytes, java.nio.charset.StandardCharsets.UTF_8);
+					final String dump = new String(dumpBytes, StandardCharsets.UTF_8);
 					this.listener.desyncDump(sourceAddress, sessionToken, gameTurnTick, dump);
+					break;
+				}
+				case ClientToServerProtocol.DESYNC_DUMP_CHUNK: {
+					final long sessionToken = buffer.getLong();
+					final int gameTurnTick = buffer.getInt();
+					final int transferId = buffer.getInt();
+					final int totalLen = buffer.getInt();
+					final int offset = buffer.getInt();
+					final int chunkLen = buffer.getInt();
+					if (!validDiagnosticChunk(totalLen, offset, chunkLen, buffer.remaining())) {
+						System.err.println("Ignoring invalid DESYNC_DUMP_CHUNK total=" + totalLen + " offset=" + offset
+								+ " chunkLen=" + chunkLen + " remaining=" + buffer.remaining());
+						break;
+					}
+					final DiagnosticChunkKey key = new DiagnosticChunkKey(sourceAddress, sessionToken, gameTurnTick,
+							transferId);
+					DiagnosticChunkAssembly assembly = this.desyncDumpChunks.get(key);
+					if (assembly == null) {
+						assembly = new DiagnosticChunkAssembly(totalLen);
+						this.desyncDumpChunks.put(key, assembly);
+					}
+					if (!assembly.accept(totalLen, offset, chunkLen, buffer)) {
+						this.desyncDumpChunks.remove(key);
+						break;
+					}
+					if (assembly.isComplete()) {
+						this.desyncDumpChunks.remove(key);
+						final String dump = new String(assembly.bytes, StandardCharsets.UTF_8);
+						this.listener.desyncDump(sourceAddress, sessionToken, gameTurnTick, dump);
+					}
 					break;
 				}
 
@@ -161,5 +196,83 @@ public class WarsmashServerParser implements OrderedUdpServerListener {
 	@Override
 	public void cantReplay(final Object sourceAddress, final int seqNo) {
 		throw new IllegalStateException("Cant replay " + seqNo + " to " + sourceAddress + " !");
+	}
+
+	private static boolean validDiagnosticChunk(final int totalLen, final int offset, final int chunkLen,
+			final int remaining) {
+		return (totalLen >= 0) && (totalLen <= MAX_DIAGNOSTIC_BYTES) && (offset >= 0) && (chunkLen >= 0)
+				&& (chunkLen <= remaining) && (offset <= totalLen) && (offset + chunkLen <= totalLen);
+	}
+
+	private static final class DiagnosticChunkKey {
+		private final Object sourceAddress;
+		private final long sessionToken;
+		private final int gameTurnTick;
+		private final int transferId;
+
+		private DiagnosticChunkKey(final Object sourceAddress, final long sessionToken, final int gameTurnTick,
+				final int transferId) {
+			this.sourceAddress = sourceAddress;
+			this.sessionToken = sessionToken;
+			this.gameTurnTick = gameTurnTick;
+			this.transferId = transferId;
+		}
+
+		@Override
+		public int hashCode() {
+			int result = this.sourceAddress == null ? 0 : this.sourceAddress.hashCode();
+			result = (31 * result) + (int) (this.sessionToken ^ (this.sessionToken >>> 32));
+			result = (31 * result) + this.gameTurnTick;
+			result = (31 * result) + this.transferId;
+			return result;
+		}
+
+		@Override
+		public boolean equals(final Object obj) {
+			if (this == obj) {
+				return true;
+			}
+			if (!(obj instanceof DiagnosticChunkKey)) {
+				return false;
+			}
+			final DiagnosticChunkKey other = (DiagnosticChunkKey) obj;
+			if (this.sessionToken != other.sessionToken || this.gameTurnTick != other.gameTurnTick
+					|| this.transferId != other.transferId) {
+				return false;
+			}
+			return this.sourceAddress == null ? other.sourceAddress == null : this.sourceAddress.equals(other.sourceAddress);
+		}
+	}
+
+	private static final class DiagnosticChunkAssembly {
+		private final byte[] bytes;
+		private final boolean[] received;
+		private int receivedCount;
+
+		private DiagnosticChunkAssembly(final int totalLen) {
+			this.bytes = new byte[totalLen];
+			this.received = new boolean[totalLen];
+		}
+
+		private boolean accept(final int totalLen, final int offset, final int chunkLen, final ByteBuffer buffer) {
+			if (totalLen != this.bytes.length) {
+				System.err.println("Dropping diagnostic chunks with changed total length " + totalLen + " != "
+						+ this.bytes.length);
+				buffer.position(buffer.position() + chunkLen);
+				return false;
+			}
+			buffer.get(this.bytes, offset, chunkLen);
+			for (int i = offset; i < offset + chunkLen; i++) {
+				if (!this.received[i]) {
+					this.received[i] = true;
+					this.receivedCount++;
+				}
+			}
+			return true;
+		}
+
+		private boolean isComplete() {
+			return this.receivedCount == this.bytes.length;
+		}
 	}
 }

@@ -7,6 +7,9 @@ import java.nio.ByteOrder;
 import net.warsmash.networking.udp.OrderedUdpCommuncation;
 
 public class WarsmashClientWriter {
+	private static final int DIAGNOSTIC_CHUNK_BYTES = 900;
+	private static int nextDiagnosticTransferId = 1;
+
 	// Type widened from OrderedUdpClient (UDP-specific) to its abstract parent
 	// so non-UDP transports — currently only WebRtcOrderedClient on the web
 	// build — can plug in without subclassing OrderedUdpClient (which would
@@ -134,36 +137,45 @@ public class WarsmashClientWriter {
 		this.sendBuffer.putLong(stateHash);
 	}
 
-	/** See {@link ClientToServerProtocol#DESYNC_DUMP}.
-	 *  Sized dynamically — local sim dumps for 100+ unit games can run
-	 *  10+ KB, well past the shared 1024-byte sendBuffer. We allocate a
-	 *  one-shot buffer here and route through the transport directly,
-	 *  same trick {@code WarsmashServerWriter.combinedDesyncReport} uses. */
+	/**
+	 * See {@link ClientToServerProtocol#DESYNC_DUMP}. This self-sends because
+	 * large reports must be split into sub-MTU packets for the web transport.
+	 */
 	public void desyncDump(final int gameTurnTick, final String localDump) {
 		final byte[] dumpBytes = localDump == null
 				? new byte[0]
 				: localDump.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-		final int header = 4 + 4 + 8 + 4 + 4; // length + protocol + sessionToken + turnTick + dumpLen
-		final ByteBuffer buf = (header + dumpBytes.length <= this.sendBuffer.capacity())
-				? this.sendBuffer
-				: ByteBuffer.allocate(header + dumpBytes.length).order(ByteOrder.BIG_ENDIAN);
-		buf.clear();
-		buf.putInt(4 + 8 + 4 + 4 + dumpBytes.length);
-		buf.putInt(ClientToServerProtocol.DESYNC_DUMP);
+		final int transferId = nextDiagnosticTransferId++;
+		for (int offset = 0; offset < dumpBytes.length; offset += DIAGNOSTIC_CHUNK_BYTES) {
+			final int chunkLen = Math.min(DIAGNOSTIC_CHUNK_BYTES, dumpBytes.length - offset);
+			this.sendDiagnosticDumpChunk(gameTurnTick, dumpBytes, transferId, offset, chunkLen);
+		}
+		if (dumpBytes.length == 0) {
+			this.sendDiagnosticDumpChunk(gameTurnTick, dumpBytes, transferId, 0, 0);
+		}
+		this.sendBuffer.clear();
+		this.sendBuffer.limit(0);
+	}
+
+	private void sendDiagnosticDumpChunk(final int gameTurnTick, final byte[] dumpBytes, final int transferId,
+			final int offset, final int chunkLen) {
+		final ByteBuffer buf = ByteBuffer.allocate(4 + 4 + 8 + 4 + 4 + 4 + 4 + 4 + chunkLen)
+				.order(ByteOrder.BIG_ENDIAN);
+		buf.putInt(4 + 8 + 4 + 4 + 4 + 4 + 4 + chunkLen);
+		buf.putInt(ClientToServerProtocol.DESYNC_DUMP_CHUNK);
 		buf.putLong(this.sessionToken);
 		buf.putInt(gameTurnTick);
+		buf.putInt(transferId);
 		buf.putInt(dumpBytes.length);
-		buf.put(dumpBytes);
-		// If we used a one-shot buffer, flush it directly via the
-		// transport (the canonical send() path reads from sendBuffer only).
-		if (buf != this.sendBuffer) {
-			buf.flip();
-			try {
-				this.client.send(buf);
-			}
-			catch (final IOException e) {
-				throw new RuntimeException(e);
-			}
+		buf.putInt(offset);
+		buf.putInt(chunkLen);
+		buf.put(dumpBytes, offset, chunkLen);
+		buf.flip();
+		try {
+			this.client.send(buf);
+		}
+		catch (final IOException e) {
+			throw new RuntimeException(e);
 		}
 	}
 

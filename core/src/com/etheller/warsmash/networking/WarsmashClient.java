@@ -408,7 +408,6 @@ public class WarsmashClient implements ServerToClientListener, GameTurnManager {
 			public void run() {
 				DesyncReport.publish(gameTurnTick, peerHashSummary, stashedHash, stashedDump);
 				WarsmashClient.this.writer.desyncDump(gameTurnTick, stashedDump);
-				WarsmashClient.this.writer.send();
 			}
 		});
 	}

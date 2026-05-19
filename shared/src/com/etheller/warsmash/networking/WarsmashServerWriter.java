@@ -6,6 +6,9 @@ import java.nio.ByteOrder;
 import java.util.Set;
 
 public class WarsmashServerWriter implements ServerToClientListener {
+	private static final int DIAGNOSTIC_CHUNK_BYTES = 900;
+	private static int nextDiagnosticTransferId = 1;
+
 	// Type widened from OrderedUdpServer to MessageSender so non-UDP
 	// transports can plug in (the web build's WebRtcOrderedServer uses a
 	// custom marker class to identify peers by netlib peer id rather than
@@ -137,42 +140,45 @@ public class WarsmashServerWriter implements ServerToClientListener {
 
 	@Override
 	public void combinedDesyncReport(final int gameTurnTick, final String combinedReport) {
-		// Wire payload: length(4) + protocol(4) + turnTick(4) + reportLength(4) + reportBytes(N) = 16 + N bytes total.
 		final byte[] reportBytes = combinedReport == null
 				? new byte[0]
 				: combinedReport.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-		// Allocate a fresh buffer if the combined report is large — the
-		// fixed 1KB sendBuffer can't hold it. Combined dumps with full
-		// unit lists for 2+ players easily run 10–20 KB.
-		final int totalLen = 16 + reportBytes.length;
-		final ByteBuffer buf = (totalLen <= this.sendBuffer.capacity())
-				? this.sendBuffer
-				: ByteBuffer.allocate(totalLen).order(ByteOrder.BIG_ENDIAN);
-		buf.clear();
-		buf.putInt(4 + 4 + 4 + reportBytes.length);
-		buf.putInt(ServerToClientProtocol.COMBINED_DESYNC_REPORT);
+		final int transferId = nextDiagnosticTransferId++;
+		for (int offset = 0; offset < reportBytes.length; offset += DIAGNOSTIC_CHUNK_BYTES) {
+			final int chunkLen = Math.min(DIAGNOSTIC_CHUNK_BYTES, reportBytes.length - offset);
+			this.sendCombinedReportChunk(gameTurnTick, reportBytes, transferId, offset, chunkLen);
+		}
+		if (reportBytes.length == 0) {
+			this.sendCombinedReportChunk(gameTurnTick, reportBytes, transferId, 0, 0);
+		}
+		this.sendBuffer.clear();
+		this.sendBuffer.limit(0);
+	}
+
+	private void sendCombinedReportChunk(final int gameTurnTick, final byte[] reportBytes, final int transferId,
+			final int offset, final int chunkLen) {
+		final ByteBuffer buf = ByteBuffer.allocate(4 + 4 + 4 + 4 + 4 + 4 + 4 + chunkLen)
+				.order(ByteOrder.BIG_ENDIAN);
+		buf.putInt(4 + 4 + 4 + 4 + 4 + 4 + chunkLen);
+		buf.putInt(ServerToClientProtocol.COMBINED_DESYNC_REPORT_CHUNK);
 		buf.putInt(gameTurnTick);
+		buf.putInt(transferId);
 		buf.putInt(reportBytes.length);
-		buf.put(reportBytes);
-		// If we used a custom buffer, route it through the same send path
-		// the canonical sendBuffer would: temporarily swap sendBuffer's
-		// position/limit so send() flushes our oversized buf instead.
-		// Cleaner alternative: have a dedicated send-large path. For now
-		// we just send via a separate flush since send() reads sendBuffer.
-		if (buf != this.sendBuffer) {
-			buf.flip();
-			try {
-				for (final Object address : this.allKnownAddressesToSend) {
-					final int pos = buf.position();
-					final int limit = buf.limit();
-					this.server.send(address, buf);
-					buf.position(pos);
-					buf.limit(limit);
-				}
+		buf.putInt(offset);
+		buf.putInt(chunkLen);
+		buf.put(reportBytes, offset, chunkLen);
+		buf.flip();
+		try {
+			for (final Object address : this.allKnownAddressesToSend) {
+				final int pos = buf.position();
+				final int limit = buf.limit();
+				this.server.send(address, buf);
+				buf.position(pos);
+				buf.limit(limit);
 			}
-			catch (final IOException e) {
-				throw new RuntimeException(e);
-			}
+		}
+		catch (final IOException e) {
+			throw new RuntimeException(e);
 		}
 	}
 

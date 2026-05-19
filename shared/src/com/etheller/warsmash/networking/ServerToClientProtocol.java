@@ -32,4 +32,10 @@ public class ServerToClientProtocol {
 	 * EVERYONE's state, not just their own machine's.
 	 */
 	public static final int COMBINED_DESYNC_REPORT = 13;
+	/**
+	 * Chunked variant of {@link #COMBINED_DESYNC_REPORT}. Used for large
+	 * diagnostic reports so the web transport never has to carry a multi-KB
+	 * datagram.
+	 */
+	public static final int COMBINED_DESYNC_REPORT_CHUNK = 14;
 }
