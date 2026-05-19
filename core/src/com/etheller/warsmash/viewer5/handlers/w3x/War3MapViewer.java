@@ -16,7 +16,6 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -236,7 +235,7 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 
 	private final DynamicShadowManager dynamicShadowManager = new DynamicShadowManager();
 
-	private final Random seededRandom = new Random(1337L);
+	private final CSimulation.DeterministicRandom seededRandom = new CSimulation.DeterministicRandom(1337L);
 
 	private final Map<String, RgbaImage> filePathToPathingMap = new HashMap<>();
 

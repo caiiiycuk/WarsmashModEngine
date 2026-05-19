@@ -369,6 +369,86 @@ public class CSimulation implements CPlayerAPI, CFogMaskSettings {
 		return h;
 	}
 
+	public static final class DeterministicRandom extends Random {
+		private static final long serialVersionUID = 1L;
+		private static final long MULTIPLIER = 0x5DEECE66DL;
+		private static final long ADDEND = 0xBL;
+		private static final long MASK = (1L << 48) - 1;
+
+		private long deterministicSeed;
+
+		public DeterministicRandom(final long seed) {
+			super(0L);
+			setSeed(seed);
+		}
+
+		@Override
+		public synchronized void setSeed(final long seed) {
+			this.deterministicSeed = (seed ^ MULTIPLIER) & MASK;
+		}
+
+		@Override
+		protected synchronized int next(final int bits) {
+			return nextBits(bits);
+		}
+
+		private int nextBits(final int bits) {
+			this.deterministicSeed = ((this.deterministicSeed * MULTIPLIER) + ADDEND) & MASK;
+			return (int) (this.deterministicSeed >>> (48 - bits));
+		}
+
+		@Override
+		public synchronized int nextInt() {
+			return nextBits(32);
+		}
+
+		@Override
+		public synchronized int nextInt(final int bound) {
+			if (bound <= 0) {
+				throw new IllegalArgumentException("bound must be positive");
+			}
+			if ((bound & -bound) == bound) {
+				return (int) ((bound * (long) nextBits(31)) >> 31);
+			}
+			int bits;
+			int value;
+			do {
+				bits = nextBits(31);
+				value = bits % bound;
+			}
+			while ((bits - value + (bound - 1)) < 0);
+			return value;
+		}
+
+		@Override
+		public synchronized long nextLong() {
+			return ((long) nextBits(32) << 32) + nextBits(32);
+		}
+
+		@Override
+		public synchronized boolean nextBoolean() {
+			return nextBits(1) != 0;
+		}
+
+		@Override
+		public synchronized float nextFloat() {
+			return nextBits(24) / ((float) (1 << 24));
+		}
+
+		@Override
+		public synchronized float nextFloat(final float bound) {
+			if (!(bound > 0.0f)) {
+				throw new IllegalArgumentException("bound must be positive");
+			}
+			return (nextBits(24) / ((float) (1 << 24))) * bound;
+		}
+
+		@Override
+		public synchronized double nextDouble() {
+			return (((long) nextBits(26) << 27) + nextBits(27)) * 0x1.0p-53;
+		}
+	}
+
 	public List<CDestructable> getDestructables() {
 		return this.destructables;
 	}
