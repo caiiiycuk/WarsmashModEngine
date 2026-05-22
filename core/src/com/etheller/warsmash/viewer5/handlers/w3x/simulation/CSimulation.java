@@ -978,12 +978,12 @@ public class CSimulation implements CPlayerAPI, CFogMaskSettings {
 
 	public TextTag spawnTextTag(final CUnit unit, final int playerIndex, final TextTagConfigType type,
 			final int amount) {
-		return this.simulationRenderController.spawnTextTag(unit, type, amount);
+		return this.simulationRenderController.spawnTextTag(unit, playerIndex, type, amount);
 	}
 
 	public TextTag spawnTextTag(final CUnit unit, final int playerIndex, final TextTagConfigType type,
 			final String message) {
-		return this.simulationRenderController.spawnTextTag(unit, type, message);
+		return this.simulationRenderController.spawnTextTag(unit, playerIndex, type, message);
 	}
 
 	public TextTag createTextTag() {

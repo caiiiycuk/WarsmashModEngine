@@ -95,9 +95,9 @@ public interface SimulationRenderController {
 
 	void unitRepositioned(CUnit cUnit);
 
-	TextTag spawnTextTag(CUnit unit, TextTagConfigType configType, int displayAmount);
+	TextTag spawnTextTag(CUnit unit, int playerIndex, TextTagConfigType configType, int displayAmount);
 
-	TextTag spawnTextTag(CUnit unit, TextTagConfigType configType, String message);
+	TextTag spawnTextTag(CUnit unit, int playerIndex, TextTagConfigType configType, String message);
 
 	TextTag createTextTag();
 

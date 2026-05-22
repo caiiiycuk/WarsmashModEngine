@@ -2321,6 +2321,10 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 		return this.simulation.getPlayer(this.localPlayerIndex).getFogOfWar();
 	}
 
+	private boolean isUnitVisibleToLocalPlayer(final CUnit unit) {
+		return (unit != null) && unit.isVisible(this.simulation, this.localPlayerIndex);
+	}
+
 	public static byte fadeLineOfSightColor(final byte lastFogStateColor, final byte state) {
 		final short prevValue = (short) (lastFogStateColor & 0xFF);
 		final short newValue = (short) (state & 0xFF);
@@ -3257,7 +3261,8 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 							}
 
 							@Override
-							public TextTag spawnTextTag(final CUnit unit, final TextTagConfigType configType,
+							public TextTag spawnTextTag(final CUnit unit, final int playerIndex,
+									final TextTagConfigType configType,
 									final int displayAmount) {
 								String text;
 								switch (configType) {
@@ -3281,12 +3286,17 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 									break;
 								}
 								}
-								return spawnTextTag(unit, configType, text);
+								return spawnTextTag(unit, playerIndex, configType, text);
 							}
 
 							@Override
-							public TextTag spawnTextTag(final CUnit unit, final TextTagConfigType configType,
+							public TextTag spawnTextTag(final CUnit unit, final int playerIndex,
+									final TextTagConfigType configType,
 									final String message) {
+								if ((playerIndex != War3MapViewer.this.localPlayerIndex)
+										|| !War3MapViewer.this.isUnitVisibleToLocalPlayer(unit)) {
+									return null;
+								}
 								final RenderUnit renderPeer = War3MapViewer.this.unitToRenderPeer.get(unit);
 								final TextTagConfig textTagConfig = getTextTagConfig(configType.getKey());
 								final Vector3 unitPosition;
@@ -3357,6 +3367,9 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 							@Override
 							public SimulationRenderComponent spawnAbilitySoundEffect(final CUnit caster,
 									final War3ID alias) {
+								if (!War3MapViewer.this.isUnitVisibleToLocalPlayer(caster)) {
+									return SimulationRenderComponent.DO_NOTHING;
+								}
 								final RenderUnit renderPeer = War3MapViewer.this.unitToRenderPeer.get(caster);
 								final AbilityUI abilityUi = War3MapViewer.this.abilityDataUI.getUI(alias);
 								if ((abilityUi == null) || (abilityUi.getEffectSound() == null)) {
@@ -3381,6 +3394,9 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 							@Override
 							public SimulationRenderComponent loopAbilitySoundEffect(final CUnit caster,
 									final War3ID alias) {
+								if (!War3MapViewer.this.isUnitVisibleToLocalPlayer(caster)) {
+									return SimulationRenderComponent.DO_NOTHING;
+								}
 								final RenderUnit renderPeer = War3MapViewer.this.unitToRenderPeer.get(caster);
 								final AbilityUI abilityUi = War3MapViewer.this.abilityDataUI.getUI(alias);
 								if ((abilityUi == null) || (abilityUi.getEffectSound() == null)) {
@@ -3405,9 +3421,11 @@ public class War3MapViewer extends AbstractMdxModelViewer implements MdxAssetLoa
 
 							@Override
 							public void stopAbilitySoundEffect(final CUnit caster, final War3ID alias) {
-								final RenderUnit renderPeer = War3MapViewer.this.unitToRenderPeer.get(caster);
+								if (!War3MapViewer.this.isUnitVisibleToLocalPlayer(caster)) {
+									return;
+								}
 								final AbilityUI abilityUi = War3MapViewer.this.abilityDataUI.getUI(alias);
-								if (abilityUi.getEffectSoundLooped() != null) {
+								if ((abilityUi != null) && (abilityUi.getEffectSoundLooped() != null)) {
 									// TODO below this probably stops all instances of the sound, which is silly
 									// and busted. Would be better to keep a notion of sound instance
 									War3MapViewer.this.uiSounds.getSound(abilityUi.getEffectSoundLooped()).stop();
