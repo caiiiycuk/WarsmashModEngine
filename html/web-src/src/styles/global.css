@@ -167,12 +167,20 @@ body.engine-page {
 .multiplayer-room-overlay {
   z-index: 250;
   background: #0e1116 url('../assets/lobby-bg.jpg') center/cover no-repeat;
+  /* Keep the dialog reachable when slot lists exceed the viewport. */
+  justify-content: flex-start;
+  overflow-y: auto;
 }
 
 /* Vista Aero glass — dark frosted panel over the lobby wallpaper. */
 .multiplayer-room-overlay .boot-overlay-card {
   position: relative;
-  overflow: hidden;
+  max-height: calc(
+    100dvh - 48px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)
+  );
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   isolation: isolate;
   color: var(--text);
   background: linear-gradient(
