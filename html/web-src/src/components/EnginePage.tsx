@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import {
-  formatSummary, hasStagedAssets,
+  formatSummary,
   readIndex, stageFiles, summarizeIndex, writeIndex,
   type IndexSummary,
 } from '../lib/assetStaging';
@@ -133,48 +133,32 @@ export default function EnginePage({
         await purgeLegacyExtractedDir();
         if (cancelled) return;
 
-        if (hasStagedAssets()) {
-          const idx = readIndex();
-          const s = summarizeIndex(idx);
-          setSummary(s);
+        // Do not trust localStorage readiness flags for boot gating.
+        // OPFS is the source of truth.
+        if (!(await hasW3Root())) {
+          writeIndex([]);
+          setSummary({ fileCount: 0, mpqCount: 0, mapCount: 0, totalBytes: 0 });
+          setBoot('no-assets');
+          return;
+        }
 
-          // The index is a localStorage cache, not proof that OPFS still
-          // contains the staged install. DevTools/browser cleanup can wipe
-          // OPFS independently and otherwise leave us auto-booting from a
-          // phantom install forever.
-          if (!(await hasW3Root())) {
-            console.warn('[EnginePage] staged asset index exists, but OPFS /w3 is missing; resetting stale index.');
-            writeIndex([]);
-            setSummary({ fileCount: 0, mpqCount: 0, mapCount: 0, totalBytes: 0 });
-            setStatusMsg('Staged install was not found in browser storage. Select your Warcraft III folder again.');
-            setBoot('no-assets');
-            return;
-          }
+        const idx = readIndex();
+        const s = summarizeIndex(idx);
+        setSummary(s);
 
-          if (s.mapCount > 0) {
-            // Cheap reality check against the actual Maps subtree. This catches
-            // a second stale-index case where OPFS still has /w3 but its staged
-            // map files were deleted underneath the cached index.
-            const actualMaps = await listAllMaps();
-            if (actualMaps.length === 0) {
-              console.warn('[EnginePage] staged asset index reports maps, but OPFS has none; resetting stale index.');
-              writeIndex([]);
-              setSummary({ fileCount: 0, mpqCount: 0, mapCount: 0, totalBytes: 0 });
-              setStatusMsg('Staged maps were not found in browser storage. Select your Warcraft III folder again.');
-              setBoot('no-assets');
-              return;
-            }
-            console.log('[EnginePage] staged assets present, auto-booting engine.');
-            await tryBootEngine();
-          }
-          else {
-            // Edge case: assets staged but no .w3x/.w3m. User must
-            // re-pick a folder that includes a stock map.
-            setStatusMsg('No map files staged yet. Re-pick your Warcraft III folder so a stock map is included.');
-            setBoot('no-assets');
-          }
+        const actualMaps = await listAllMaps();
+        if (actualMaps.length > 0) {
+          console.log('[EnginePage] OPFS /w3 is present and maps were found, auto-booting engine.');
+          await tryBootEngine();
         }
         else {
+          // Keep index consistent with real OPFS state to avoid stale UI.
+          if (s.mapCount > 0) {
+            console.warn('[EnginePage] staged asset index reports maps, but OPFS has none; resetting stale index.');
+            writeIndex([]);
+            setSummary({ fileCount: 0, mpqCount: 0, mapCount: 0, totalBytes: 0 });
+          }
+          setStatusMsg('No map files staged yet. Re-pick your Warcraft III folder so a stock map is included.');
           setBoot('no-assets');
         }
       }
