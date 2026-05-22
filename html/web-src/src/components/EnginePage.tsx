@@ -15,6 +15,7 @@ import {
 import { bootEngineWorker, type EngineHandle } from '../lib/engineBoot';
 import {
   getLobbyState,
+  hasRemoteHumanPlayer,
   isSlotJoinable,
   requestSlot,
   startGame,
@@ -443,7 +444,8 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
   const selfSlot = lobby.slots.find((slot) => slot.occupant === lobby.selfId) ?? null;
   const racesLocked = lobby.mapInfo?.fixedPlayerSettings ?? false;
   const hasTeams = lobby.mapInfo?.useCustomForces === true && (lobby.mapInfo?.forces.length ?? 0) > 0;
-  const canStart = lobby.isHost && selfSlot !== null;
+  const hasRemotePlayer = hasRemoteHumanPlayer();
+  const canStart = lobby.isHost && selfSlot !== null && hasRemotePlayer;
   if (lobby.matchStarted) {
     return (
       <div class="boot-overlay multiplayer-room-overlay">
@@ -538,6 +540,10 @@ function MultiplayerRoomOverlay({ lobby, onStart }: { lobby: LobbyState; onStart
         </ul>
 
         {lobby.lastError && <p class="error">{lobby.lastError}</p>}
+
+        {lobby.isHost && !hasRemotePlayer && (
+          <p class="room-waiting-players">At least one other player must join before you can start.</p>
+        )}
 
         {lobby.isHost
           ? <button class="primary" disabled={!lobby.lobbyCode || !canStart} onClick={onStart}>Start</button>

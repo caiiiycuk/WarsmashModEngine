@@ -1019,6 +1019,11 @@ function assignToFirstOpenSlot(slots: LobbySlot[], peerId: string, mapInfo: MapI
   return next;
 }
 
+/** True when at least one other human peer is connected to the lobby. */
+export function hasRemoteHumanPlayer(): boolean {
+  return state.players.some((p) => p.peerId !== state.selfId && p.peerId !== '');
+}
+
 /** Host-only: start the game. Reads the slot table to assign each
  *  peer their actual slot index, sends 'start-as-joiner' to every
  *  peer with a unique session token + the full slot config table,
@@ -1035,6 +1040,7 @@ export function startGame(): {
   slotConfigs: SlotConfigEntry[];
 } | null {
   if (!state.isHost) return null;
+  if (!hasRemoteHumanPlayer()) return null;
   setState({ matchStarted: true });
   const sessionTokenToSlot: Record<string, number> = {};
   const hostLobbySlot = state.slots.find(s => s.occupant === state.selfId);
