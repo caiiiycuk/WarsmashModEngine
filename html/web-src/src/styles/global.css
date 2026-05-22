@@ -166,6 +166,7 @@ body.engine-page {
 }
 .multiplayer-room-overlay {
   z-index: 250;
+  background: #0e1116 url('./lobby-bg.jpg') center/cover no-repeat;
 }
 .room-slot-list {
   display: flex;
