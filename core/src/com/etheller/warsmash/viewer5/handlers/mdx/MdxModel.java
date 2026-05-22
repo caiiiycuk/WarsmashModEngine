@@ -107,6 +107,10 @@ public class MdxModel extends com.etheller.warsmash.viewer5.Model<MdxHandler> {
 			parser = new MdlxModel(ByteBuffer.wrap(IOUtils.toByteArray((InputStream) bufferOrParser)));
 		}
 
+		load(parser);
+	}
+
+	public void load(final MdlxModel parser) {
 		final ModelViewer viewer = this.viewer;
 		final PathSolver pathSolver = this.pathSolver;
 		final SolverParams solverParams = this.solverParams;

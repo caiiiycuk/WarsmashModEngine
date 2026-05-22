@@ -24,10 +24,15 @@ public class DataSourceFDFParserBuilder implements FDFParserBuilder {
 
 	@Override
 	public FDFParser build(final String path) {
+		if (!this.dataSource.has(path)) {
+			System.err.println("Missing FDF file: " + path);
+			return null;
+		}
 		FDFLexer lexer;
 		try (InputStream stream = this.dataSource.getResourceAsStream(path)) {
 			if (stream == null) {
-				throw new IllegalArgumentException("Missing FDF file: " + path);
+				System.err.println("Missing FDF file: " + path);
+				return null;
 			}
 			lexer = new FDFLexer(CharStreams.fromString(readString(stream)));
 		}
@@ -44,7 +49,7 @@ public class DataSourceFDFParserBuilder implements FDFParserBuilder {
 					sourceName = String.format("%s:%d:%d: ", sourceName, line, charPositionInLine);
 				}
 
-				System.err.println(sourceName + "line " + line + ":" + charPositionInLine + " " + msg);
+				System.err.println(sourceName + msg);
 			}
 		};
 		fdfParser.addErrorListener(errorListener);

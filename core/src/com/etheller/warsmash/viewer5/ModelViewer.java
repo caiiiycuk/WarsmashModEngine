@@ -140,8 +140,6 @@ public abstract class ModelViewer {
 
 	public Resource load(final String src, final PathSolver pathSolver, final Object solverParams) {
 		String finalSrc = src;
-		String extension = "";
-		boolean isFetch = false;
 
 		// If a given path solver, resolve.
 		if (pathSolver != null) {
@@ -157,8 +155,9 @@ public abstract class ModelViewer {
 					System.err.println("Attempting to load non-existant file: " + finalSrc);
 				}
 			}
-			extension = solved.getExtension();
-			isFetch = solved.isFetch();
+
+			String extension = solved.getExtension();
+			boolean isFetch = solved.isFetch();
 
 			if (!(extension instanceof String)) {
 				throw new IllegalStateException("The path solver did not return an extension!");
@@ -194,15 +193,19 @@ public abstract class ModelViewer {
 
 				// TODO this is a synchronous hack, skipped some Ghostwolf code
 				try {
-					final Object resourceData;
-					if ("arrayBuffer".equals(handlerAndDataType[1])) {
-						final ByteBuffer buffer = this.dataSource.read(finalSrc);
-						resourceData = (buffer != null) ? buffer : this.dataSource.getResourceAsStream(finalSrc);
+					if (this.dataSource.has(finalSrc)) {
+						final Object resourceData;
+						if ("arrayBuffer".equals(handlerAndDataType[1])) {
+							final ByteBuffer buffer = this.dataSource.read(finalSrc);
+							resourceData = (buffer != null) ? buffer : this.dataSource.getResourceAsStream(finalSrc);
+						}
+						else {
+							resourceData = this.dataSource.getResourceAsStream(finalSrc);
+						}
+						resource.loadData(resourceData, null);
+					} else {
+						System.err.println("Attempting to load non-existant file: " + finalSrc);
 					}
-					else {
-						resourceData = this.dataSource.getResourceAsStream(finalSrc);
-					}
-					resource.loadData(resourceData, null);
 				}
 				catch (final Exception e) {
 					throw new IllegalStateException("Unable to load data: " + finalSrc, e);
