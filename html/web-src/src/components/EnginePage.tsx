@@ -374,6 +374,7 @@ export default function EnginePage({
     const started = startGame();
     if (!started) return;
     console.log('[EnginePage] host Start clicked.');
+    window.top.postMessage({ event: 'mp.room.locked' }, '*');
     setMultiplayerLobbyVisible(false);
   }
 
