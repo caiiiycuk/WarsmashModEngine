@@ -1,10 +1,15 @@
 package com.etheller.warsmash.viewer5.handlers.w3x.ui;
 
+import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer.ShapeType;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.math.Vector3;
+import com.etheller.warsmash.viewer5.handlers.w3x.War3MapViewer;
 import com.etheller.warsmash.viewer5.handlers.w3x.environment.PathingGrid;
 import com.etheller.warsmash.viewer5.handlers.w3x.rendersim.RenderUnit;
 import com.etheller.warsmash.viewer5.handlers.w3x.simulation.CSimulation;
@@ -27,6 +32,7 @@ public class MeleeUIMinimap {
 	private float heroAlpha = 0.90f;
 	private byte polarity = -1;
 	private boolean visible = true;
+	private final Vector3 cameraCornerWorld = new Vector3();
 
 	public MeleeUIMinimap(final Rectangle displayArea, final Rectangle playableMapArea, final Texture minimapTexture,
 			final Texture[] teamColors, final Texture[] specialIcons) {
@@ -154,6 +160,65 @@ public class MeleeUIMinimap {
 
 	public boolean containsMouse(final float x, final float y) {
 		return this.minimapFilledArea.contains(x, y);
+	}
+
+	public void renderCameraViewRect(final ShapeRenderer shapeRenderer, final SpriteBatch batch,
+			final War3MapViewer war3MapViewer) {
+		if (!this.visible || (this.minimapTexture == null)) {
+			return;
+		}
+		final Rectangle viewport = war3MapViewer.worldScene.camera.rect;
+		float minWorldX = Float.POSITIVE_INFINITY;
+		float minWorldY = Float.POSITIVE_INFINITY;
+		float maxWorldX = Float.NEGATIVE_INFINITY;
+		float maxWorldY = Float.NEGATIVE_INFINITY;
+		final float left = viewport.x;
+		final float right = viewport.x + viewport.width;
+		final float bottom = viewport.y;
+		final float top = viewport.y + viewport.height;
+		final float[] cornerScreenX = { left, right, right, left };
+		final float[] cornerScreenY = { bottom, bottom, top, top };
+		for (int i = 0; i < cornerScreenX.length; i++) {
+			war3MapViewer.getClickLocation(this.cameraCornerWorld, (int) cornerScreenX[i], (int) cornerScreenY[i],
+					false, false);
+			minWorldX = Math.min(minWorldX, this.cameraCornerWorld.x);
+			minWorldY = Math.min(minWorldY, this.cameraCornerWorld.y);
+			maxWorldX = Math.max(maxWorldX, this.cameraCornerWorld.x);
+			maxWorldY = Math.max(maxWorldY, this.cameraCornerWorld.y);
+		}
+		float rectX = this.minimapFilledArea.x
+				+ (((minWorldX - this.playableMapArea.getX()) / this.playableMapArea.getWidth())
+						* this.minimapFilledArea.width);
+		float rectY = this.minimapFilledArea.y
+				+ (((minWorldY - this.playableMapArea.getY()) / this.playableMapArea.getHeight())
+						* this.minimapFilledArea.height);
+		float rectW = this.minimapFilledArea.x
+				+ (((maxWorldX - this.playableMapArea.getX()) / this.playableMapArea.getWidth())
+						* this.minimapFilledArea.width)
+				- rectX;
+		float rectH = this.minimapFilledArea.y
+				+ (((maxWorldY - this.playableMapArea.getY()) / this.playableMapArea.getHeight())
+						* this.minimapFilledArea.height)
+				- rectY;
+		final Rectangle filledArea = this.minimapFilledArea;
+		rectX = Math.max(filledArea.x, rectX);
+		rectY = Math.max(filledArea.y, rectY);
+		final float maxX = filledArea.x + filledArea.width;
+		final float maxY = filledArea.y + filledArea.height;
+		rectW = Math.min(rectW, maxX - rectX);
+		rectH = Math.min(rectH, maxY - rectY);
+		if ((rectW <= 0f) || (rectH <= 0f)) {
+			return;
+		}
+		batch.end();
+		shapeRenderer.setProjectionMatrix(batch.getProjectionMatrix());
+		shapeRenderer.setColor(Color.WHITE);
+		Gdx.gl.glLineWidth(2);
+		shapeRenderer.begin(ShapeType.Line);
+		shapeRenderer.rect(rectX, rectY, rectW, rectH);
+		shapeRenderer.end();
+		Gdx.gl.glLineWidth(1);
+		batch.begin();
 	}
 
 	public void setVisible(boolean visible) {
