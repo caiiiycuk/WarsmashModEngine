@@ -10,5 +10,38 @@
   <body class="engine-page">
     <div id="app"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+        function handler(event) {
+            if (event.code === 'KeyT') {
+                event.preventDefault();
+                event.stopPropagation();
+                window.top.postMessage({ event: 'mp.room.chat' }, '*');
+            } else if (event.code === 'KeyP') {
+                event.preventDefault();
+                event.stopPropagation();
+                window.top.postMessage({ event: 'mp.room.chatPrivate' }, '*');
+            }
+        };
+        function mountChatHandlers() {
+            document.addEventListener('keydown', handler, { capture: true });
+            document.addEventListener('keypress', handler, { capture: true });
+        }
+        function unmountChatHandlers() {
+            document.removeEventListener('keydown', handler, { capture: true });
+            document.removeEventListener('keypress', handler, { capture: true });
+        }
+        window.addEventListener('message', (e) => {
+            if (e.data.event === 'mp.room.mountChatHandlers') {
+                mountChatHandlers();
+            } else if (e.data.event === 'mp.room.unmountChatHandlers') {
+                unmountChatHandlers();
+            }
+        });
+        window.top.postMessage({
+            event: 'mp.room.ready',
+            chatKey: 'T',
+            privateChatKey: 'P',
+        }, '*');
+    </script>
   </body>
 </html>
