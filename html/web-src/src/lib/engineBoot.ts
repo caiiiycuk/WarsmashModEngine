@@ -132,29 +132,65 @@ export function bootEngineWorker(opts: BootOptions): EngineHandle {
 }
 
 function wireInput(canvas: HTMLCanvasElement, worker: Worker): void {
+  // We stay pointer-locked on the canvas. clientX/clientY are frozen while locked;
+  // track logical cursor via movementX/movementY.
+  let pointerX = Math.round(canvas.clientWidth / 2);
+  let pointerY = Math.round(canvas.clientHeight / 2);
+
+  const isLocked = (): boolean => document.pointerLockElement === canvas;
+
+  function ensurePointerLock(): void {
+    if (!isLocked()) {
+      canvas.requestPointerLock().catch(() => {});
+    }
+  }
+
+  function seedPointerAtCenter(): void {
+    pointerX = Math.round(canvas.clientWidth / 2);
+    pointerY = Math.round(canvas.clientHeight / 2);
+    worker.postMessage({ kind: 'pointer', name: 'sync', x: pointerX, y: pointerY, button: 0 });
+  }
+
   function relayPointer(name: 'down' | 'up' | 'move', e: PointerEvent): void {
-    const rect = canvas.getBoundingClientRect();
-    // Translate browser pointer button → libGDX Input.Buttons.
-    // Browser:  0=LEFT, 1=MIDDLE, 2=RIGHT
-    // libGDX:   0=LEFT, 1=RIGHT, 2=MIDDLE
+    if (isLocked()) {
+      if (name === 'move') {
+        pointerX += e.movementX;
+        pointerY += e.movementY;
+      }
+    } else {
+      const rect = canvas.getBoundingClientRect();
+      pointerX = Math.round(e.clientX - rect.left);
+      pointerY = Math.round(e.clientY - rect.top);
+    }
     let btn: number;
     switch (e.button) {
-      case 0:  btn = 0; break;  // LEFT
-      case 1:  btn = 2; break;  // MIDDLE
-      case 2:  btn = 1; break;  // RIGHT
+      case 0:  btn = 0; break;
+      case 1:  btn = 2; break;
+      case 2:  btn = 1; break;
       default: btn = e.button;
     }
     worker.postMessage({
       kind: 'pointer', name,
-      x: Math.round(e.clientX - rect.left),
-      y: Math.round(e.clientY - rect.top),
+      x: pointerX,
+      y: pointerY,
       button: btn,
     });
   }
-  canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); relayPointer('down', e); });
-  canvas.addEventListener('pointerup',     (e) => relayPointer('up', e));
-  canvas.addEventListener('pointermove',   (e) => relayPointer('move', e));
-  canvas.addEventListener('pointercancel', (e) => relayPointer('up', e));
+
+  document.addEventListener('pointerlockchange', () => {
+    if (isLocked()) seedPointerAtCenter();
+  });
+
+  canvas.addEventListener('pointerdown', (e) => {
+    ensurePointerLock();
+    relayPointer('down', e);
+  });
+  canvas.addEventListener('pointerup', (e) => relayPointer('up', e));
+  canvas.addEventListener('pointermove', (e) => relayPointer('move', e));
+  canvas.addEventListener('pointercancel', (e) => {
+    if (e.buttons !== 0) return;
+    relayPointer('up', e);
+  });
   canvas.addEventListener('wheel', (e) => {
     worker.postMessage({ kind: 'scroll', dx: e.deltaX, dy: e.deltaY });
     e.preventDefault();

@@ -108,6 +108,11 @@ final class WorkerInput extends AbstractInput {
 				else this.processor.mouseMoved(this.x, this.y);
 			}
 			break;
+		case "sync":
+			// Main thread snapped coords after pointer-lock exit — no delta spike.
+			this.deltaX = 0;
+			this.deltaY = 0;
+			break;
 		default:
 			// ignore unknown
 			break;
