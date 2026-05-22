@@ -48,6 +48,10 @@ function frame(kind: WireKind, body: Uint8Array): Uint8Array {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+function isDevNetConfigHost(): boolean {
+  const h = window.location.hostname;
+  return h === 'localhost' || h === 'test.js-dos.com';
+}
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -98,16 +102,18 @@ function startPump(): void {
 async function ensureNet(): Promise<Net> {
   if (net) return net;
 
-  setTimeout(() => {
-    window.postMessage({ 
-      event: "mp.room.netConfig", 
-      netConfig: {
-        debug: true,
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }] 
-      },
-    });
-    console.log("netConfig sent");
-  }, 3000);
+  if (isDevNetConfigHost()) {
+    setTimeout(() => {
+      window.postMessage({
+        event: "mp.room.netConfig",
+        netConfig: {
+          debug: true,
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        },
+      });
+      console.log("netConfig sent");
+    }, 3000);
+  }
 
   const params = new URLSearchParams(window.location.search);
   const netEndpoint = (params.get("net") ?? "wss://net.dos.zone");
